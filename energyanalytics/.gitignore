@@ -1,0 +1,6 @@
+disaggregation/notebook/.ipynb_checkpoints/
+disaggregation/**/*.pyc
+disaggregation/data/**
+disaggregation/new_data/**
+disaggregation/notebooks/.ipynb_checkpoints/**
+venv/**

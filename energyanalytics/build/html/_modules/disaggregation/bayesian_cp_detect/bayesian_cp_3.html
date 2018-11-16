@@ -1,0 +1,1131 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" lang="python 2.7.3">
+  <head>
+        <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>disaggregation.bayesian_cp_detect.bayesian_cp_3 &#8212; disaggregation algorithms 0.0.1 documentation</title>
+    <link rel="stylesheet" href="../../../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <script type="text/javascript" src="../../../_static/documentation_options.js"></script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for disaggregation.bayesian_cp_detect.bayesian_cp_3</h1><div class="highlight"><pre>
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">scipy</span> <span class="k">as</span> <span class="nn">sp</span>
+<span class="kn">import</span> <span class="nn">datetime</span>
+<span class="kn">import</span> <span class="nn">copy</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="c"># import matplotlib.pyplot as plt</span>
+<span class="kn">import</span> <span class="nn">operator</span>
+<span class="kn">import</span> <span class="nn">scipy.misc</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+
+
+<span class="k">class</span> <span class="nc">instrument</span><span class="p">:</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+    <span class="n">instrument_max</span> <span class="o">=</span> <span class="k">None</span>
+    <span class="n">i_shape</span> <span class="o">=</span> <span class="k">None</span>
+    <span class="n">power_max</span> <span class="o">=</span> <span class="k">None</span>
+    <span class="n">power_average</span> <span class="o">=</span> <span class="k">None</span>
+    
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">instrument_max</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">instrument_max</span> <span class="o">=</span> <span class="n">instrument_max</span>
+        
+    <span class="k">def</span> <span class="nf">set_shape</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">i_shape_list</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">i_shape</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i_shape_list</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="set_disaggregation_option"><a class="viewcode-back" href="../../../disaggregation/code.html#disaggregation.bayesian_cp_detect.bayesian_cp_3.set_disaggregation_option">[docs]</a><span class="k">def</span> <span class="nf">set_disaggregation_option</span><span class="p">(</span><span class="n">time_resolution</span> <span class="o">=</span> <span class="mf">15.</span><span class="p">,</span> 
+                              <span class="n">change_shape</span> <span class="o">=</span> <span class="p">[],</span>
+                              <span class="n">cp_interval</span> <span class="o">=</span> <span class="mi">900</span><span class="p">,</span> 
+                              <span class="n">process_noise</span> <span class="o">=</span> <span class="mf">3.3</span><span class="p">,</span>
+                              <span class="n">measure_noise</span> <span class="o">=</span> <span class="mf">28.3</span><span class="p">,</span>
+                              <span class="n">init_pos_std</span> <span class="o">=</span> <span class="mf">8.16</span>
+                             <span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    a dict that support other functions (similar to class member variables)</span>
+<span class="sd">    </span>
+<span class="sd">    :param time_resolution: time resolution in units of seconds, default 15.</span>
+<span class="sd">    :type time_resolution: float.</span>
+<span class="sd">    :param change_shape:  Each list is change of power comparing to the last change point; position zero is the first point after &quot;change&quot;</span>
+<span class="sd">    :type: list of list of float .</span>
+<span class="sd">    :param cp_interval: expected interval of change point in unit of seconds.</span>
+<span class="sd">    :type: int.</span>
+<span class="sd">    :param process_noise: at each step the variance of mean will increase by  process_noise^2</span>
+<span class="sd">    :type: float.</span>
+<span class="sd">    :param measurement_noise: float, measurement noise.</span>
+<span class="sd">    :type: float.</span>
+<span class="sd">    :param init_pos_std: either float or list of float. A single float will be repeated for n_change_shape times. This variable sets up the initial std of the location of each shape.</span>
+<span class="sd">    :type: float.</span>
+<span class="sd">    </span>
+<span class="sd">    automatic generated key-value pairs:</span>
+<span class="sd">        </span>
+<span class="sd">        n_change_shape: the number of shapes</span>
+<span class="sd">        </span>
+<span class="sd">        H: np.log(1-1./(cp_interval/time_resolution)), used in calculation</span>
+<span class="sd">    </span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    
+    <span class="n">option</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;time_resolution&#39;</span><span class="p">:</span> <span class="n">time_resolution</span><span class="p">,</span> 
+        <span class="s">&#39;change_shape&#39;</span><span class="p">:</span> <span class="n">change_shape</span><span class="p">,</span> 
+        <span class="s">&#39;n_change_shape&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">change_shape</span><span class="p">),</span>
+        <span class="s">&#39;cp_interval&#39;</span><span class="p">:</span> <span class="n">cp_interval</span><span class="p">,</span> 
+        <span class="s">&#39;H&#39;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="mf">1.</span><span class="o">/</span><span class="p">(</span><span class="n">cp_interval</span><span class="o">/</span><span class="n">time_resolution</span><span class="p">)),</span>
+        <span class="s">&#39;process_noise&#39;</span><span class="p">:</span> <span class="n">process_noise</span><span class="p">,</span> 
+        <span class="s">&#39;measure_noise&#39;</span><span class="p">:</span> <span class="n">measure_noise</span><span class="p">,</span>
+        <span class="s">&#39;init_pos_std&#39;</span><span class="p">:</span> <span class="n">init_pos_std</span><span class="p">,</span>
+        <span class="s">&#39;unhappy_count_thre&#39;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span> 
+        <span class="s">&#39;len_protected&#39;</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span>
+        <span class="s">&#39;delta_shape&#39;</span><span class="p">:</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="mi">50</span><span class="o">/</span><span class="mi">3</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">change_shape</span><span class="p">))]</span>
+    <span class="p">}</span>
+    </div>
+    <span class="k">return</span> <span class="n">option</span>
+
+
+<span class="k">def</span> <span class="nf">disaggregate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">opt</span><span class="p">):</span>
+
+    <span class="c"># load options from opt</span>
+    <span class="n">unhappy_count_thre</span> <span class="o">=</span> <span class="n">opt</span><span class="p">[</span><span class="s">&#39;unhappy_count_thre&#39;</span><span class="p">]</span>
+    <span class="n">len_protected</span> <span class="o">=</span> <span class="n">opt</span><span class="p">[</span><span class="s">&#39;len_protected&#39;</span><span class="p">]</span>
+    
+    <span class="c"># status</span>
+    <span class="n">current_data_pos</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">last_datum</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="c"># set prior</span>
+    <span class="n">log_prob</span><span class="p">,</span> <span class="n">delta_mean</span><span class="p">,</span> <span class="n">delta_var</span><span class="p">,</span> <span class="n">time_since_last_cp</span> <span class="o">=</span> <span class="n">set_prior_7</span><span class="p">(</span><span class="n">opt</span><span class="p">)</span>
+    
+    <span class="n">last_cp</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c"># by definition, zero is the start of the first chunck of data.</span>
+    <span class="n">cp_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">last_cp</span><span class="p">]</span>
+
+    <span class="n">unhappy_count</span> <span class="o">=</span> <span class="mi">0</span>
+    
+    <span class="k">while</span> <span class="p">(</span><span class="n">current_data_pos</span><span class="o">&lt;</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)):</span>
+        <span class="n">datum</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">current_data_pos</span><span class="p">]</span>
+        <span class="n">log_prob</span><span class="p">,</span> <span class="n">delta_mean</span><span class="p">,</span> <span class="n">delta_var</span><span class="p">,</span> <span class="n">time_since_last_cp</span> <span class="o">=</span> <span class="n">update_with_datum_7</span><span class="p">(</span>
+                <span class="n">datum</span>
+                <span class="p">,</span> <span class="n">log_prob</span>
+                <span class="p">,</span> <span class="n">delta_mean</span>
+                <span class="p">,</span> <span class="n">delta_var</span>
+                <span class="p">,</span> <span class="n">time_since_last_cp</span>
+                <span class="p">,</span> <span class="n">last_datum</span>
+                <span class="p">,</span> <span class="n">opt</span><span class="p">)</span>
+
+        <span class="n">leader_prob</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">log_prob</span><span class="p">]</span> <span class="p">)</span>
+        <span class="n">leader_shape</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span> <span class="p">[</span><span class="n">t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">log_prob</span><span class="p">]</span> <span class="p">)</span>
+
+        <span class="n">flag_happy</span> <span class="o">=</span> <span class="n">is_happy</span><span class="p">(</span><span class="n">log_prob</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="n">flag_happy</span><span class="p">:</span>
+            
+            <span class="n">unhappy_count</span> <span class="o">=</span> <span class="mi">0</span> <span class="c"># reset counter, only consecutive fail counts</span>
+
+            <span class="c"># trim data, only retain data that is within protected region or the last data.</span>
+            <span class="n">log_prob</span> <span class="o">=</span> <span class="n">trim_5</span><span class="p">(</span><span class="n">log_prob</span><span class="p">,</span> <span class="n">time_since_last_cp</span><span class="p">,</span> <span class="n">time_thre</span> <span class="o">=</span> <span class="n">len_protected</span><span class="p">)</span>
+            <span class="n">delta_mean</span> <span class="o">=</span> <span class="n">trim_5</span><span class="p">(</span><span class="n">delta_mean</span><span class="p">,</span> <span class="n">time_since_last_cp</span><span class="p">,</span> <span class="n">time_thre</span> <span class="o">=</span> <span class="n">len_protected</span><span class="p">)</span>
+            <span class="n">delta_var</span> <span class="o">=</span> <span class="n">trim_5</span><span class="p">(</span><span class="n">delta_var</span><span class="p">,</span> <span class="n">time_since_last_cp</span><span class="p">,</span> <span class="n">time_thre</span> <span class="o">=</span> <span class="n">len_protected</span><span class="p">)</span>
+            <span class="n">time_since_last_cp</span> <span class="o">=</span> <span class="n">trim_5</span><span class="p">(</span><span class="n">time_since_last_cp</span><span class="p">,</span> <span class="n">time_since_last_cp</span><span class="p">,</span> <span class="n">time_thre</span> <span class="o">=</span> <span class="n">len_protected</span><span class="p">)</span>
+            
+        <span class="k">else</span><span class="p">:</span>  <span class="c"># &quot;unhappy&quot;, basically saying the algorithm is confused whether there is a new change point</span>
+            <span class="n">unhappy_count</span> <span class="o">+=</span> <span class="mi">1</span>
+
+            <span class="k">if</span> <span class="p">(</span><span class="n">unhappy_count</span> <span class="o">==</span> <span class="n">unhappy_count_thre</span><span class="p">):</span>
+                <span class="n">last_cp</span> <span class="o">=</span> <span class="n">current_data_pos</span> <span class="o">-</span> <span class="n">unhappy_count_thre</span>
+                <span class="n">cp_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">last_cp</span><span class="p">)</span>  <span class="c"># declare a new change point</span>
+                
+                <span class="c"># now reset everything</span>
+                <span class="n">unhappy_count</span> <span class="o">=</span> <span class="mi">0</span>
+                <span class="n">log_prob</span><span class="p">,</span> <span class="n">delta_mean</span><span class="p">,</span> <span class="n">delta_var</span><span class="p">,</span> <span class="n">time_since_last_cp</span> <span class="o">=</span> <span class="n">set_prior_7</span><span class="p">(</span><span class="n">opt</span><span class="p">)</span>
+                <span class="n">last_datum</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span> <span class="n">data</span><span class="p">[(</span><span class="n">last_cp</span><span class="o">-</span><span class="mi">3</span><span class="p">):</span><span class="n">last_cp</span><span class="p">]</span> <span class="p">)</span>  <span class="c"># use the last three to increase accuracy</span>
+                <span class="k">for</span> <span class="n">current_data_pos_t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">last_cp</span><span class="p">,</span> <span class="n">last_cp</span> <span class="o">+</span> <span class="n">len_protected</span><span class="p">):</span>
+                    <span class="n">log_prob</span><span class="p">,</span> <span class="n">delta_mean</span><span class="p">,</span> <span class="n">delta_var</span><span class="p">,</span> <span class="n">time_since_last_cp</span> <span class="o">=</span> <span class="n">update_with_datum_7</span><span class="p">(</span><span class="n">datum</span><span class="p">,</span> 
+                                                                                              <span class="n">log_prob</span><span class="p">,</span> 
+                                                                                              <span class="n">delta_mean</span><span class="p">,</span>
+                                                                                              <span class="n">delta_var</span><span class="p">,</span>
+                                                                                              <span class="n">time_since_last_cp</span><span class="p">,</span>
+                                                                                              <span class="n">last_datum</span><span class="p">,</span>
+                                                                                              <span class="n">opt</span><span class="p">)</span>
+                    <span class="n">log_prob</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[</span><span class="n">t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">log_prob</span> <span class="p">]</span>
+                    <span class="n">delta_mean</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[</span><span class="n">t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">delta_mean</span> <span class="p">]</span>
+                    <span class="n">delta_var</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[</span><span class="n">t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">delta_var</span> <span class="p">]</span>
+                    <span class="n">time_since_last_cp</span> <span class="o">=</span> <span class="p">[[</span><span class="n">t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">time_since_last_cp</span><span class="p">]</span>
+                
+                <span class="c"># re-normalize prob</span>
+                <span class="n">z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">log_prob</span><span class="p">]))</span>
+                <span class="n">log_prob</span> <span class="o">=</span> <span class="p">[[</span><span class="n">t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">-</span><span class="n">z</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">log_prob</span><span class="p">]</span>
+                
+        <span class="n">current_data_pos</span> <span class="o">+=</span> <span class="mi">1</span>
+        
+        <span class="k">if</span> <span class="n">current_data_pos</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">last_datum</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span> <span class="n">data</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="n">current_data_pos</span><span class="p">]</span> <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">last_datum</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span> <span class="n">data</span><span class="p">[(</span><span class="n">current_data_pos</span><span class="o">-</span><span class="mi">3</span><span class="p">):</span><span class="n">current_data_pos</span><span class="p">]</span> <span class="p">)</span>
+            
+    <span class="k">return</span> <span class="n">cp_list</span>
+
+
+<span class="k">def</span> <span class="nf">set_prior_7</span><span class="p">(</span><span class="n">para</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    set prior before the first data came in</span>
+<span class="sd">    </span>
+<span class="sd">    create log_prob: log likelihood of each shape x each time_since_last_cp</span>
+<span class="sd">        delta_mean: offset from shape (translation in y only)</span>
+<span class="sd">        delta_var: confidence of the offset</span>
+<span class="sd">        time_since_last_cp: when is the last change point.</span>
+
+<span class="sd">    Note that each matrix is a &quot;wide&quot; matrix, i.e. each shape is an element, </span>
+<span class="sd">    each shape has a long list.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">n_shape</span> <span class="o">=</span> <span class="n">para</span><span class="p">[</span><span class="s">&#39;n_change_shape&#39;</span><span class="p">]</span>
+
+    <span class="n">log_prob</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">)</span> <span class="p">]</span>
+    <span class="n">delta_mean</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">)</span> <span class="p">]</span>
+    <span class="n">delta_var</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">)</span> <span class="p">]</span>
+    <span class="n">time_since_last_cp</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">)</span> <span class="p">]</span>
+    
+    <span class="k">return</span> <span class="n">log_prob</span><span class="p">,</span> <span class="n">delta_mean</span><span class="p">,</span> <span class="n">delta_var</span><span class="p">,</span> <span class="n">time_since_last_cp</span>
+
+
+<span class="k">def</span> <span class="nf">update_with_datum_7</span><span class="p">(</span><span class="n">datum</span><span class="p">,</span> 
+                      <span class="n">log_prob</span><span class="p">,</span> 
+                      <span class="n">delta_mean</span><span class="p">,</span> 
+                      <span class="n">delta_var</span><span class="p">,</span> 
+                      <span class="n">time_since_last_cp</span><span class="p">,</span> 
+                      <span class="n">last_datum</span><span class="p">,</span> 
+                      <span class="n">para</span><span class="p">):</span>
+    <span class="c"># extract parameters</span>
+    <span class="n">shape</span> <span class="o">=</span> <span class="n">para</span><span class="p">[</span><span class="s">&#39;change_shape&#39;</span><span class="p">]</span>
+    <span class="n">n_shape</span> <span class="o">=</span> <span class="n">para</span><span class="p">[</span><span class="s">&#39;n_change_shape&#39;</span><span class="p">]</span>
+
+    <span class="n">H</span> <span class="o">=</span> <span class="n">para</span><span class="p">[</span><span class="s">&#39;H&#39;</span><span class="p">]</span> <span class="c"># log probability that a new cp forms</span>
+    <span class="n">H_2_exp</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">H</span><span class="p">)</span>
+
+    <span class="n">H_small_factor</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="n">H_small</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">H_2_exp</span><span class="o">/</span><span class="n">H_small_factor</span><span class="p">);</span> <span class="c"># in case that the last change point is too close, use a small H_small</span>
+    
+    <span class="n">delta_shape</span> <span class="o">=</span> <span class="n">para</span><span class="p">[</span><span class="s">&#39;delta_shape&#39;</span><span class="p">]</span> <span class="c"># shape noise</span>
+    
+    <span class="n">Q</span> <span class="o">=</span> <span class="n">para</span><span class="p">[</span><span class="s">&#39;process_noise&#39;</span><span class="p">]</span><span class="o">**</span><span class="mi">2</span> <span class="c"># process noise</span>
+    <span class="n">R</span> <span class="o">=</span> <span class="n">para</span><span class="p">[</span><span class="s">&#39;measure_noise&#39;</span><span class="p">]</span><span class="o">**</span><span class="mi">2</span> <span class="c"># measurement noise</span>
+    
+    <span class="n">delta_init</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">t</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">para</span><span class="p">[</span><span class="s">&#39;delta_shape&#39;</span><span class="p">]]</span>
+
+    <span class="c"># a function that return element within the list or </span>
+    <span class="c"># the last element of the list if that is not possible</span>
+    <span class="n">shape_helper</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">i_shape</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">shape</span><span class="p">[</span><span class="n">i_shape</span><span class="p">][</span><span class="n">x</span><span class="p">]</span> <span class="k">if</span> <span class="n">x</span><span class="o">&lt;</span><span class="nb">len</span><span class="p">(</span><span class="n">shape</span><span class="p">[</span><span class="n">i_shape</span><span class="p">])</span> <span class="k">else</span> <span class="n">shape</span><span class="p">[</span><span class="n">i_shape</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="c"># step 1, grow log probability, and time since the last change point</span>
+    <span class="n">log_prob_grow</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">)</span> <span class="p">]</span>
+    <span class="n">time_since_last_cp_grow</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">)]</span>
+
+    <span class="c"># determine the probability of each (shape, \tau) at the current datum point</span>
+    <span class="c"># find the longest distance in time_since_last_cp</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">time_since_last_cp</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span> <span class="c"># this is the first data</span>
+        <span class="n">new_cp_prob</span> <span class="o">=</span> <span class="mi">1</span><span class="o">/</span><span class="nb">float</span><span class="p">(</span><span class="n">n_shape</span><span class="p">)</span>  <span class="c"># each shape is equally likely</span>
+        <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">):</span>
+            <span class="n">log_prob_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">new_cp_prob</span><span class="p">)]</span>
+            <span class="n">time_since_last_cp_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c"># distance from this data point to the last confirmed change point</span>
+        <span class="n">r_max</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span> <span class="p">[</span><span class="n">t</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">time_since_last_cp</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]</span> <span class="p">)</span>
+        
+        <span class="c"># find probability of all shapes at r_max</span>
+        <span class="n">total_prob_since_last_cp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">log_prob</span><span class="p">]</span> <span class="p">)</span>
+        <span class="n">new_cp_prob</span> <span class="o">=</span> <span class="n">total_prob_since_last_cp</span> <span class="o">*</span> <span class="n">H_2_exp</span> <span class="o">/</span> <span class="n">n_shape</span>
+
+        <span class="k">if</span> <span class="n">r_max</span> <span class="o">&lt;</span> <span class="mi">5</span><span class="p">:</span>
+            <span class="n">new_cp_prob</span> <span class="o">=</span> <span class="n">new_cp_prob</span> <span class="o">/</span> <span class="n">H_small_factor</span><span class="p">;</span>
+        
+        <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">):</span>
+            <span class="c"># log_prob_grow[i_shape] = [np.log(new_cp_prob)] + log_prob[i_shape][:-1] + [ log_prob[i_shape][-1]+H ]</span>
+            <span class="k">if</span> <span class="n">r_max</span> <span class="o">&lt;</span> <span class="mi">5</span><span class="p">:</span>
+                <span class="n">log_prob_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">new_cp_prob</span><span class="p">)]</span> <span class="o">+</span> <span class="n">log_prob</span><span class="p">[</span><span class="n">i_shape</span><span class="p">][:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span> <span class="n">log_prob</span><span class="p">[</span><span class="n">i_shape</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">+</span><span class="n">H_small</span> <span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">log_prob_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">new_cp_prob</span><span class="p">)]</span> <span class="o">+</span> <span class="n">log_prob</span><span class="p">[</span><span class="n">i_shape</span><span class="p">][:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span> <span class="n">log_prob</span><span class="p">[</span><span class="n">i_shape</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">+</span><span class="n">H</span> <span class="p">]</span>
+            <span class="n">time_since_last_cp_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="n">x</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">time_since_last_cp</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]]</span>
+
+    <span class="c"># step 2, update the estimation of next data</span>
+    <span class="n">delta_mean_grow</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">)</span> <span class="p">]</span>
+    <span class="n">delta_var_grow</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">)</span> <span class="p">]</span>
+    
+    <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">):</span>
+        <span class="n">delta_mean_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">shape_helper</span><span class="p">(</span><span class="n">i_shape</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span><span class="o">+</span><span class="n">y</span> 
+            <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
+                <span class="n">time_since_last_cp_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">],</span> 
+                <span class="p">[</span><span class="n">last_datum</span><span class="p">]</span> <span class="o">+</span> <span class="n">delta_mean</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span>  <span class="c"># append new change point offset to the begining of offset list</span>
+                <span class="p">)</span>
+        <span class="p">]</span>
+        <span class="c"># Q is process noise</span>
+        <span class="n">delta_var_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span> <span class="n">delta_init</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="p">]</span> <span class="o">+</span> <span class="p">[</span> <span class="n">x</span><span class="o">+</span><span class="n">Q</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">delta_var</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="p">]</span>  
+        
+    
+    <span class="c"># Estimate probability of current mean and var to observe this datum</span>
+    <span class="c"># this is used to calculate posterior prob</span>
+    <span class="n">p_predict</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[</span> <span class="p">]</span> <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">)</span> <span class="p">]</span>  
+    <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">):</span>
+        <span class="n">n_tau</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">delta_mean_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">])</span>
+        <span class="n">tmp</span> <span class="o">=</span> <span class="p">[</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_tau</span><span class="p">)</span> <span class="p">]</span>
+        <span class="k">for</span> <span class="n">i_tau</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_tau</span><span class="p">):</span>
+            <span class="n">tmp</span><span class="p">[</span><span class="n">i_tau</span><span class="p">]</span> <span class="o">=</span> <span class="n">log_norm_pdf</span><span class="p">(</span> <span class="n">datum</span><span class="p">,</span> <span class="n">delta_mean_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">][</span><span class="n">i_tau</span><span class="p">],</span> <span class="n">delta_var_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">][</span><span class="n">i_tau</span><span class="p">]</span> <span class="o">+</span> <span class="n">R</span> <span class="p">)</span>
+        <span class="n">p_predict</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">=</span> <span class="n">tmp</span>
+
+    <span class="c"># Update step</span>
+    <span class="n">delta_mean_posterior</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">)]</span>
+    <span class="n">delta_var_posterior</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">)</span> <span class="p">]</span>
+    <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">):</span>
+        <span class="n">n_tau</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">delta_mean_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">])</span>
+        <span class="n">delta_mean_tmp</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_tau</span><span class="p">)</span> <span class="p">]</span>
+        <span class="n">delta_var_tmp</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_tau</span><span class="p">)</span> <span class="p">]</span>
+        <span class="k">for</span> <span class="n">i_tau</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_tau</span><span class="p">):</span>
+            <span class="n">K</span> <span class="o">=</span> <span class="n">delta_var_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">][</span><span class="n">i_tau</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">delta_var_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">][</span><span class="n">i_tau</span><span class="p">]</span><span class="o">+</span><span class="n">R</span><span class="p">)</span>  <span class="c"># Kalman coeff</span>
+            <span class="n">offset</span> <span class="o">=</span> <span class="n">datum</span> <span class="o">-</span> <span class="n">delta_mean_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">][</span><span class="n">i_tau</span><span class="p">]</span>
+            <span class="n">delta_mean_tmp</span><span class="p">[</span><span class="n">i_tau</span><span class="p">]</span> <span class="o">=</span> <span class="n">delta_mean_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">][</span><span class="n">i_tau</span><span class="p">]</span> <span class="o">+</span> <span class="n">K</span> <span class="o">*</span> <span class="n">offset</span>
+            <span class="n">delta_var_tmp</span><span class="p">[</span><span class="n">i_tau</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="n">K</span><span class="p">)</span> <span class="o">*</span> <span class="n">delta_var_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">][</span><span class="n">i_tau</span><span class="p">]</span>
+        <span class="n">delta_mean_posterior</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">=</span> <span class="n">delta_mean_tmp</span>
+        <span class="n">delta_var_posterior</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">=</span> <span class="n">delta_var_tmp</span>
+            
+    <span class="c"># update prob</span>
+    <span class="n">log_prob_posterior</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">)</span> <span class="p">]</span>
+    <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">):</span>
+        <span class="n">log_prob_posterior</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span><span class="o">+</span><span class="n">y</span> <span class="k">for</span> <span class="n">x</span><span class="p">,</span><span class="n">y</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">log_prob_grow</span><span class="p">[</span><span class="n">i_shape</span><span class="p">],</span> <span class="n">p_predict</span><span class="p">[</span><span class="n">i_shape</span><span class="p">])]</span>
+
+    <span class="c"># normalization</span>
+    <span class="n">Z</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">misc</span><span class="o">.</span><span class="n">logsumexp</span><span class="p">([</span><span class="n">x</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">log_prob_posterior</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">t</span><span class="p">])</span>
+    <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">):</span>
+        <span class="n">log_prob_posterior</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span><span class="o">-</span><span class="n">Z</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">log_prob_posterior</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]]</span>
+        
+    <span class="c"># discount the shape out of offset, see line 252 when this is added in</span>
+    <span class="n">time_since_last_cp_posterior</span> <span class="o">=</span> <span class="n">time_since_last_cp_grow</span>
+    <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape</span><span class="p">):</span>
+        <span class="n">delta_mean_posterior</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span><span class="o">-</span><span class="n">shape_helper</span><span class="p">(</span><span class="n">i_shape</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">delta_mean_posterior</span><span class="p">[</span><span class="n">i_shape</span><span class="p">],</span> <span class="n">time_since_last_cp_posterior</span><span class="p">[</span><span class="n">i_shape</span><span class="p">])]</span>
+
+    <span class="k">return</span> <span class="n">log_prob_posterior</span><span class="p">,</span> <span class="n">delta_mean_posterior</span><span class="p">,</span> <span class="n">delta_var_posterior</span><span class="p">,</span> <span class="n">time_since_last_cp_posterior</span>
+
+<span class="k">def</span> <span class="nf">log_norm_pdf</span><span class="p">(</span><span class="n">x</span>
+                 <span class="p">,</span> <span class="n">mu</span>
+                 <span class="p">,</span> <span class="n">sigma_2</span> <span class="c"># sigma^2</span>
+                <span class="p">):</span>
+    <span class="k">return</span> <span class="o">-</span><span class="p">(</span><span class="n">x</span><span class="o">-</span><span class="n">mu</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="n">sigma_2</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">*</span><span class="n">sigma_2</span><span class="p">)</span><span class="o">/</span><span class="mi">2</span>
+
+<span class="k">def</span> <span class="nf">is_happy</span><span class="p">(</span><span class="n">prob</span><span class="p">,</span> <span class="n">prob_thre</span><span class="o">=.</span><span class="mi">3</span><span class="p">,</span> <span class="n">len_protect</span> <span class="o">=</span> <span class="mi">5</span><span class="p">):</span>
+    <span class="n">last_cp_prob</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">prob</span><span class="p">]</span> <span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">last_cp_prob</span><span class="o">&gt;</span><span class="n">prob_thre</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span> <span class="nb">len</span><span class="p">(</span><span class="n">prob</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span><span class="o">&lt;</span><span class="n">len_protect</span> <span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">trim_5</span><span class="p">(</span><span class="n">var</span><span class="p">,</span> <span class="n">time_since_last_cp</span><span class="p">,</span> <span class="n">time_thre</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>
+    <span class="n">new_var</span> <span class="o">=</span> <span class="p">[[]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">var</span><span class="p">))]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">var</span><span class="p">)):</span>
+        <span class="n">new_var</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">val</span> 
+            <span class="k">for</span> <span class="n">pos</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">var</span><span class="p">[</span><span class="n">i</span><span class="p">])</span> 
+            <span class="k">if</span> <span class="p">((</span><span class="n">time_since_last_cp</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">pos</span><span class="p">]</span><span class="o">&lt;</span><span class="n">time_thre</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">pos</span><span class="o">+</span><span class="mi">1</span><span class="o">==</span><span class="nb">len</span><span class="p">(</span><span class="n">var</span><span class="p">[</span><span class="n">i</span><span class="p">])</span> <span class="p">))</span> 
+        <span class="p">]</span>
+    <span class="k">return</span> <span class="n">new_var</span>
+
+
+<span class="k">def</span> <span class="nf">segment_data</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">cp_list</span><span class="p">):</span>
+    <span class="n">data_seg</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">data_seg_raw_last</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="n">cp_list_2</span> <span class="o">=</span> <span class="n">cp_list</span> <span class="o">+</span> <span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="c">#print cp_list_2</span>
+
+    <span class="c">#if cp_list[-1]!=len(data)-1:</span>
+    <span class="c">#    cp_list_2 = cp_list + [len(data)-1] # append the end of the data</span>
+    <span class="c">#else:</span>
+    <span class="c">#    cp_list_2 = cp_list</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">cp_list_2</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+        <span class="n">cp_s</span> <span class="o">=</span> <span class="n">cp_list_2</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+        <span class="n">cp_e</span> <span class="o">=</span> <span class="n">cp_list_2</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">cp_e</span> <span class="o">-</span> <span class="n">cp_s</span> <span class="o">&gt;</span> <span class="mi">50</span><span class="p">:</span>
+            <span class="n">cp_e</span> <span class="o">=</span> <span class="n">cp_s</span><span class="o">+</span><span class="mi">50</span>
+        <span class="n">last_datum</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span> <span class="n">data</span><span class="p">[</span><span class="n">cp_s</span><span class="o">-</span><span class="mi">3</span><span class="p">:</span><span class="n">cp_s</span><span class="p">]</span> <span class="p">)</span>
+        <span class="c">#last_datum = np.mean(data[cp_list_2[i-1]:cp_s])</span>
+        <span class="n">data_seg</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">t</span><span class="o">-</span><span class="n">last_datum</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">data</span><span class="p">[</span><span class="n">cp_s</span><span class="p">:</span><span class="n">cp_e</span><span class="p">]])</span> <span class="c"># 2017/7/26 TODO: maybe we don&#39;t need to subtract the last_datum?</span>
+        <span class="n">data_seg_raw_last</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="n">cp_e</span><span class="p">])</span>
+    <span class="n">n_seg</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_seg</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">data_seg</span><span class="p">,</span> <span class="n">n_seg</span><span class="p">,</span> <span class="n">data_seg_raw_last</span>
+
+<span class="c"># the only difference between segment data and segment data new is without - last_datum</span>
+<span class="k">def</span> <span class="nf">segment_data_new</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">cp_list</span><span class="p">):</span>
+    <span class="n">data_seg</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">data_seg_raw_last</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">cp_list_2</span> <span class="o">=</span> <span class="n">cp_list</span> <span class="o">+</span> <span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="c"># In case the end of cp_list already contains the end of whole list</span>
+    <span class="c">#if cp_list[-1]!=len(data)-1:</span>
+     <span class="c">#   cp_list_2 = cp_list + [len(data)-1] # append the end of the data</span>
+    <span class="c">#else:</span>
+    <span class="c">#    cp_list_2 = cp_list</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">cp_list_2</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+        <span class="n">cp_s</span> <span class="o">=</span> <span class="n">cp_list_2</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+        <span class="n">cp_e</span> <span class="o">=</span> <span class="n">cp_list_2</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">cp_e</span> <span class="o">-</span> <span class="n">cp_s</span> <span class="o">&gt;</span> <span class="mi">50</span><span class="p">:</span>
+            <span class="n">cp_e</span> <span class="o">=</span> <span class="n">cp_s</span><span class="o">+</span><span class="mi">50</span>
+        <span class="n">last_datum</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span> <span class="n">data</span><span class="p">[</span><span class="n">cp_s</span><span class="o">-</span><span class="mi">3</span><span class="p">:</span><span class="n">cp_s</span><span class="p">]</span> <span class="p">)</span>
+        <span class="n">data_seg</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">data</span><span class="p">[</span><span class="n">cp_s</span><span class="p">:</span><span class="n">cp_e</span><span class="p">]])</span> <span class="c"># 2017/7/26 TODO: maybe we don&#39;t need to subtract the last_datum?</span>
+        <span class="n">data_seg_raw_last</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="n">cp_e</span><span class="p">])</span>
+    <span class="n">n_seg</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_seg</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">data_seg</span><span class="p">,</span> <span class="n">n_seg</span><span class="p">,</span> <span class="n">data_seg_raw_last</span>
+
+
+<span class="sd">&#39;&#39;&#39; recursively generate all the binary representation for shape code which length is less than n &#39;&#39;&#39;</span>
+<span class="k">def</span> <span class="nf">shape_code_gen</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">n</span><span class="o">==</span><span class="mi">1</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[(</span><span class="mi">0</span><span class="p">,),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,)]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">last_result</span> <span class="o">=</span> <span class="n">shape_code_gen</span><span class="p">(</span><span class="n">n</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[(</span><span class="mi">0</span><span class="p">,)</span><span class="o">+</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">last_result</span><span class="p">]</span> <span class="o">+</span> <span class="p">[(</span><span class="mi">1</span><span class="p">,)</span><span class="o">+</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">last_result</span><span class="p">]</span>
+
+<span class="sd">&#39;&#39;&#39; recursively generate all the k-nary representation for shape code which length is less than n &#39;&#39;&#39;</span>
+
+<span class="k">def</span> <span class="nf">shape_code_gen_new</span><span class="p">(</span><span class="n">n</span><span class="p">,</span><span class="n">k</span><span class="p">):</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">n</span><span class="o">==</span><span class="mi">1</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[(</span><span class="n">i</span><span class="p">,)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">k</span><span class="p">)]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">last_result</span> <span class="o">=</span> <span class="n">shape_code_gen_new</span><span class="p">(</span><span class="n">n</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="n">k</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[(</span><span class="n">i</span><span class="p">,)</span><span class="o">+</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">last_result</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">k</span><span class="p">)]</span>
+
+<span class="k">def</span> <span class="nf">combine_shape</span><span class="p">(</span><span class="n">shape_matched</span><span class="p">,</span> <span class="n">all_shape_code</span><span class="p">):</span>
+    <span class="n">shape_dict</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">n_shape_matched</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">shape_matched</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">shape_code</span> <span class="ow">in</span> <span class="n">all_shape_code</span><span class="p">:</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i_shape</span><span class="p">,</span> <span class="n">flag</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">shape_code</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">flag</span><span class="p">:</span>
+                <span class="n">t</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">multiply</span><span class="p">(</span><span class="n">shape_matched</span><span class="p">[</span><span class="n">i_shape</span><span class="p">],</span><span class="n">flag</span><span class="p">))</span>
+        <span class="n">shape_dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="n">shape_code</span><span class="p">)]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">t</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">shape_dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="mi">0</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_shape_matched</span><span class="p">))]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">shape_dict</span>
+
+
+<span class="sd">&#39;&#39;&#39; the weighted l2 distance between two vectors(last element has weight 50)&#39;&#39;&#39;</span>
+<span class="k">def</span> <span class="nf">l2_distance</span><span class="p">(</span><span class="n">list_1</span><span class="p">,</span> <span class="n">list_2</span><span class="p">,</span> <span class="n">last_point_w</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">2</span><span class="p">):</span>
+    <span class="n">dis</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">tmp</span> <span class="o">=</span> <span class="p">[(</span><span class="n">x</span><span class="o">-</span><span class="n">y</span><span class="p">)</span><span class="o">**</span><span class="n">n</span> <span class="k">for</span> <span class="n">x</span><span class="p">,</span><span class="n">y</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">list_1</span><span class="p">,</span> <span class="n">list_2</span><span class="p">)]</span>
+    <span class="n">dis</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span> <span class="n">tmp</span> <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">list_1</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">list_2</span><span class="p">):</span>
+        <span class="n">dis</span><span class="o">+=</span><span class="n">last_point_w</span><span class="o">*</span><span class="p">(</span><span class="n">list_1</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">list_2</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span><span class="o">**</span><span class="n">n</span>
+    <span class="k">return</span> <span class="n">dis</span> <span class="o">/</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">tmp</span><span class="p">)</span><span class="o">+</span><span class="n">last_point_w</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">get_seg_prob_positive</span><span class="p">(</span><span class="n">data_seg</span><span class="p">,</span><span class="n">shape_dict</span><span class="p">):</span>
+
+    <span class="n">shape_prob_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">var_measurement</span> <span class="o">=</span> <span class="mi">800</span>
+
+    <span class="k">for</span> <span class="n">i_seg</span><span class="p">,</span> <span class="n">seg</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">data_seg</span><span class="p">):</span>
+        <span class="n">distance_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">distance_dict</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">seg_mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">seg</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">shape_code</span><span class="p">,</span> <span class="n">shape</span> <span class="ow">in</span> <span class="n">shape_dict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">seg_mean</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">distance_dict</span><span class="p">[</span><span class="n">shape_code</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span> <span class="o">-</span><span class="n">l2_distance</span><span class="p">(</span><span class="n">seg</span><span class="p">,</span> <span class="n">shape</span><span class="p">)</span> <span class="o">/</span> <span class="n">var_measurement</span> <span class="p">)</span>
+                <span class="c">#distance_dict[tuple(-t for t in shape_code)] = 0            </span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c">#distance_dict[tuple(-t for t in shape_code)] = np.exp( -(shape[-1] - (-seg_mean))**2 / var_measurement )</span>
+                <span class="n">distance_dict</span><span class="p">[</span><span class="n">shape_code</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="n">z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">distance_dict</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+        <span class="n">distance_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span><span class="n">v</span><span class="o">/</span><span class="n">z</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span><span class="n">v</span> <span class="ow">in</span> <span class="n">distance_dict</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+
+        <span class="n">shape_prob_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">distance_dict</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">shape_prob_list</span>
+
+
+<span class="sd">&#39;&#39;&#39; compute the exponential of the negative of l2 distance between shapes and the data segment for all shapes, and use this for the probability of each shape&#39;&#39;&#39;</span>
+<span class="k">def</span> <span class="nf">get_seg_prob</span><span class="p">(</span> <span class="n">data_seg</span><span class="p">,</span> <span class="n">shape_dict</span> <span class="p">):</span>
+    <span class="n">shape_prob_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">var_measurement</span> <span class="o">=</span> <span class="mi">800</span>
+
+    <span class="k">for</span> <span class="n">i_seg</span><span class="p">,</span> <span class="n">seg</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">data_seg</span><span class="p">):</span>
+        <span class="n">distance_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">distance_dict</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">seg_mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">seg</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">shape_code</span><span class="p">,</span> <span class="n">shape</span> <span class="ow">in</span> <span class="n">shape_dict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">seg_mean</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">distance_dict</span><span class="p">[</span><span class="n">shape_code</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span> <span class="o">-</span><span class="n">l2_distance</span><span class="p">(</span><span class="n">seg</span><span class="p">,</span> <span class="n">shape</span><span class="p">)</span> <span class="o">/</span> <span class="n">var_measurement</span> <span class="p">)</span>
+                <span class="n">distance_dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="o">-</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">shape_code</span><span class="p">)]</span> <span class="o">=</span> <span class="mi">0</span>            
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">distance_dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="o">-</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">shape_code</span><span class="p">)]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span> <span class="o">-</span><span class="p">(</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="p">(</span><span class="o">-</span><span class="n">seg_mean</span><span class="p">))</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="n">var_measurement</span> <span class="p">)</span> <span class="c"># 08/07/2017 TODO: need to improve </span>
+                <span class="n">distance_dict</span><span class="p">[</span><span class="n">shape_code</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="n">z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">distance_dict</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+        <span class="n">distance_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span><span class="n">v</span><span class="o">/</span><span class="n">z</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span><span class="n">v</span> <span class="ow">in</span> <span class="n">distance_dict</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+
+        <span class="n">shape_prob_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">distance_dict</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">shape_prob_list</span>
+
+
+<span class="c"># rewrite viterbi: keep track of the trace list and compare with the precomputed boot trace list, if the value differs a lot then artificially add one change point(means that change point may be missing) </span>
+<span class="k">def</span> <span class="nf">viterbi</span><span class="p">(</span><span class="n">shape_prob_list</span><span class="p">,</span> <span class="n">state_prob_list</span><span class="p">,</span> <span class="n">data_seg</span><span class="p">,</span> <span class="n">obs_mat</span> <span class="p">):</span>
+    <span class="n">n_seg</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_seg</span><span class="p">)</span>
+
+    <span class="n">state_prob_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">state_prob_list</span><span class="p">]</span>
+    <span class="n">state_memory_list_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">shape_memory_list_list</span> <span class="o">=</span> <span class="p">[]</span>
+    
+    <span class="k">for</span> <span class="n">i_seg</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_seg</span><span class="p">):</span>
+        <span class="n">seg_mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">data_seg</span><span class="p">[</span><span class="n">i_seg</span><span class="p">])</span>
+
+        <span class="n">next_state_prob_list</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="p">:</span><span class="mi">0</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">state_prob_list</span><span class="o">.</span><span class="n">keys</span><span class="p">()}</span>
+        <span class="n">state_memory_list</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="p">:</span><span class="mi">0</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">state_prob_list</span><span class="o">.</span><span class="n">keys</span><span class="p">()}</span>
+        <span class="n">shape_memory_list</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="p">:</span><span class="mi">0</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">state_prob_list</span><span class="o">.</span><span class="n">keys</span><span class="p">()}</span>
+
+        <span class="k">for</span> <span class="n">next_state</span><span class="p">,</span> <span class="n">next_state_prob</span> <span class="ow">in</span> <span class="n">next_state_prob_list</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+
+            <span class="n">max_prob</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s">&#39;Inf&#39;</span><span class="p">)</span>
+            <span class="n">max_past_state</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">()</span>
+            <span class="n">max_shape</span> <span class="o">=</span> <span class="p">()</span>
+            <span class="k">for</span> <span class="n">shape_code</span><span class="p">,</span> <span class="n">shape_prob</span> <span class="ow">in</span> <span class="n">shape_prob_list</span><span class="p">[</span><span class="n">i_seg</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="c">#print obs_mat,shape_code</span>
+                <span class="n">change_state</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">obs_mat</span><span class="p">,</span> <span class="n">shape_code</span><span class="p">)</span>
+                <span class="n">past_state</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">subtract</span><span class="p">(</span><span class="n">next_state</span><span class="p">,</span> <span class="n">change_state</span><span class="p">))</span>
+                <span class="k">if</span> <span class="n">past_state</span> <span class="ow">in</span> <span class="n">state_prob_list</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">state_prob_list</span><span class="p">[</span><span class="n">past_state</span><span class="p">]</span> <span class="o">*</span> <span class="n">shape_prob</span> <span class="o">&gt;</span> <span class="n">max_prob</span><span class="p">:</span>
+                        <span class="n">max_prob</span> <span class="o">=</span> <span class="n">state_prob_list</span><span class="p">[</span><span class="n">past_state</span><span class="p">]</span> <span class="o">*</span> <span class="n">shape_prob</span>
+                        <span class="n">max_past_state</span> <span class="o">=</span> <span class="n">past_state</span>
+                        <span class="n">max_shape</span> <span class="o">=</span> <span class="n">shape_code</span>
+            <span class="n">state_memory_list</span><span class="p">[</span><span class="n">next_state</span><span class="p">]</span> <span class="o">=</span> <span class="n">max_past_state</span>
+            <span class="n">next_state_prob_list</span><span class="p">[</span><span class="n">next_state</span><span class="p">]</span> <span class="o">=</span> <span class="n">max_prob</span>
+            <span class="n">shape_memory_list</span><span class="p">[</span><span class="n">next_state</span><span class="p">]</span> <span class="o">=</span> <span class="n">max_shape</span>
+
+        <span class="n">state_prob_list</span> <span class="o">=</span> <span class="n">next_state_prob_list</span>
+
+        <span class="n">state_prob_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">next_state_prob_list</span><span class="p">)</span>
+        <span class="n">state_memory_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">state_memory_list</span><span class="p">)</span>
+        <span class="n">shape_memory_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">shape_memory_list</span><span class="p">)</span>
+
+
+    <span class="n">trace_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">shape_list</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="n">end_state</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">state_prob_list_list</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">(),</span> <span class="n">key</span><span class="o">=</span><span class="n">operator</span><span class="o">.</span><span class="n">itemgetter</span><span class="p">(</span><span class="mi">1</span><span class="p">))[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">trace_list</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">end_state</span><span class="p">)</span>
+    
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">n_seg</span><span class="p">)):</span>
+        <span class="n">max_shape</span> <span class="o">=</span> <span class="n">shape_memory_list_list</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">end_state</span><span class="p">]</span>
+        <span class="n">end_state</span> <span class="o">=</span> <span class="n">state_memory_list_list</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">end_state</span><span class="p">]</span>
+        <span class="n">trace_list</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">end_state</span><span class="p">)</span>
+        <span class="n">shape_list</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">max_shape</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">trace_list</span><span class="p">,</span> <span class="n">shape_list</span>
+
+
+<span class="k">def</span> <span class="nf">viterbi_new</span><span class="p">(</span><span class="n">shape_prob_list</span><span class="p">,</span> <span class="n">state_prob_list</span><span class="p">,</span> <span class="n">boot_state_prob_list</span><span class="p">,</span> <span class="n">data_seg</span><span class="p">,</span> <span class="n">obs_mat</span> <span class="p">):</span>
+    <span class="c"># originally shape means the &#39;change&#39;, state means the actual usage...</span>
+
+    <span class="n">n_seg</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_seg</span><span class="p">)</span>
+
+    <span class="n">state_prob_list_list</span> <span class="o">=</span> <span class="n">state_prob_list</span>
+    <span class="n">state_memory_list_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">shape_memory_list_list</span> <span class="o">=</span> <span class="p">[]</span>
+    
+    <span class="k">for</span> <span class="n">i_seg</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_seg</span><span class="p">):</span>
+        <span class="n">seg_mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">data_seg</span><span class="p">[</span><span class="n">i_seg</span><span class="p">])</span>
+
+        <span class="n">next_state_prob_list</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="p">:</span><span class="mi">0</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">state_prob_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">()}</span>
+        <span class="n">state_memory_list</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="p">:</span><span class="mi">0</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">state_prob_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">()}</span>
+        <span class="n">shape_memory_list</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="p">:</span><span class="mi">0</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">state_prob_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">()}</span>
+
+        <span class="k">for</span> <span class="n">next_state</span><span class="p">,</span> <span class="n">next_state_prob</span> <span class="ow">in</span> <span class="n">next_state_prob_list</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+
+            <span class="n">max_prob</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s">&#39;Inf&#39;</span><span class="p">)</span>
+            <span class="n">max_past_state</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">()</span>
+            <span class="n">max_shape</span> <span class="o">=</span> <span class="p">()</span>
+            <span class="k">for</span> <span class="n">shape_code</span><span class="p">,</span> <span class="n">shape_prob</span> <span class="ow">in</span> <span class="n">shape_prob_list</span><span class="p">[</span><span class="n">i_seg</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="c">#print obs_mat,shape_code</span>
+                <span class="n">change_state</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">obs_mat</span><span class="p">,</span> <span class="n">shape_code</span><span class="p">)</span> <span class="c"># if the obs_mat is identity matrix then the change_state = shape_code</span>
+                <span class="n">past_state</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">subtract</span><span class="p">(</span><span class="n">next_state</span><span class="p">,</span> <span class="n">change_state</span><span class="p">))</span> 
+                <span class="k">if</span> <span class="n">past_state</span> <span class="ow">in</span> <span class="n">state_prob_list</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">state_prob_list</span><span class="p">[</span><span class="n">past_state</span><span class="p">]</span> <span class="o">*</span> <span class="n">shape_prob</span> <span class="o">&gt;</span> <span class="n">max_prob</span><span class="p">:</span>
+                        <span class="n">max_prob</span> <span class="o">=</span> <span class="n">state_prob_list</span><span class="p">[</span><span class="n">i_seg</span><span class="p">][</span><span class="n">past_state</span><span class="p">]</span> <span class="o">*</span> <span class="n">shape_prob</span>
+                        <span class="n">max_past_state</span> <span class="o">=</span> <span class="n">past_state</span>
+                        <span class="n">max_shape</span> <span class="o">=</span> <span class="n">shape_code</span>
+            <span class="n">state_memory_list</span><span class="p">[</span><span class="n">next_state</span><span class="p">]</span> <span class="o">=</span> <span class="n">max_past_state</span>
+            <span class="n">next_state_prob_list</span><span class="p">[</span><span class="n">next_state</span><span class="p">]</span> <span class="o">=</span> <span class="n">max_prob</span>
+            <span class="n">shape_memory_list</span><span class="p">[</span><span class="n">next_state</span><span class="p">]</span> <span class="o">=</span> <span class="n">max_shape</span>
+
+        <span class="n">state_prob_list</span> <span class="o">=</span> <span class="n">next_state_prob_list</span>
+
+        <span class="n">state_prob_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">next_state_prob_list</span><span class="p">)</span>
+        <span class="n">state_memory_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">state_memory_list</span><span class="p">)</span>
+        <span class="n">shape_memory_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">shape_memory_list</span><span class="p">)</span>
+
+
+    <span class="n">trace_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">shape_list</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="n">end_state</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">state_prob_list_list</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">(),</span> <span class="n">key</span><span class="o">=</span><span class="n">operator</span><span class="o">.</span><span class="n">itemgetter</span><span class="p">(</span><span class="mi">1</span><span class="p">))[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">trace_list</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">end_state</span><span class="p">)</span>
+    
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">n_seg</span><span class="p">)):</span>
+        <span class="n">max_shape</span> <span class="o">=</span> <span class="n">shape_memory_list_list</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">end_state</span><span class="p">]</span>
+        <span class="n">end_state</span> <span class="o">=</span> <span class="n">state_memory_list_list</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">end_state</span><span class="p">]</span>
+        <span class="n">trace_list</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">end_state</span><span class="p">)</span>
+        <span class="n">shape_list</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">max_shape</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">trace_list</span><span class="p">,</span> <span class="n">shape_list</span>
+
+
+<span class="c"># Dissaggregation</span>
+
+<span class="c">#TODO: others should not be scaled find the lowest 1% to be the basal noise </span>
+
+<span class="k">def</span> <span class="nf">generate_predicted_profile</span><span class="p">(</span><span class="n">cp_list</span><span class="p">,</span> <span class="n">shape_matched</span><span class="p">,</span> <span class="n">shape_list</span><span class="p">,</span> <span class="n">raw_data</span><span class="p">,</span> <span class="n">n_equipment_type</span><span class="p">,</span> <span class="n">obs_mat</span><span class="p">,</span> <span class="n">trace_list</span><span class="p">):</span>
+
+    <span class="n">predicted_profile</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_equipment_type</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span> <span class="p">]</span>
+    
+    
+    <span class="c">#predicted_profile[n_equipment_type].extend( [raw_data[0] for _ in range(len(raw_data))] ) # initialize to 0 for each equipement</span>
+    <span class="n">predicted_profile</span><span class="p">[</span><span class="n">n_equipment_type</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span> <span class="p">[</span><span class="n">raw_data</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">argpartition</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">raw_data</span><span class="p">),</span><span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">raw_data</span><span class="p">)</span><span class="o">/</span><span class="mi">24</span><span class="p">))[</span><span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">raw_data</span><span class="p">)</span><span class="o">/</span><span class="mi">24</span><span class="p">)]]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">raw_data</span><span class="p">))]</span> <span class="p">)</span>
+    <span class="k">for</span> <span class="n">i_equipment</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_equipment_type</span><span class="p">):</span> <span class="c"># loop through all the equipments</span>
+        <span class="k">for</span> <span class="n">i_cp</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">cp_list</span><span class="p">)):</span> <span class="c"># loop through all the segments</span>
+            <span class="n">t_start</span> <span class="o">=</span> <span class="n">cp_list</span><span class="p">[</span><span class="n">i_cp</span><span class="p">]</span>      <span class="c"># the start point of the current segment</span>
+            <span class="k">if</span> <span class="n">i_cp</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">cp_list</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                <span class="n">t_end</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">raw_data</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">t_end</span> <span class="o">=</span> <span class="n">cp_list</span><span class="p">[</span><span class="n">i_cp</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>  <span class="c"># find the end_point of the current segment</span>
+            <span class="k">if</span> <span class="n">trace_list</span><span class="p">[</span><span class="n">i_cp</span><span class="p">][</span><span class="n">i_equipment</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>  <span class="c"># means that the equipment is not used during the current segement</span>
+                <span class="n">predicted_profile</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="mi">0</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">t_end</span><span class="o">-</span><span class="n">t_start</span><span class="p">)])</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">i_cp</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="p">(</span><span class="n">trace_list</span><span class="p">[</span><span class="n">i_cp</span><span class="p">][</span><span class="n">i_equipment</span><span class="p">]</span> <span class="o">==</span> <span class="n">trace_list</span><span class="p">[</span><span class="n">i_cp</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="n">i_equipment</span><span class="p">]):</span>
+                    <span class="k">if</span> <span class="n">i_cp</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                        <span class="n">last_datum</span> <span class="o">=</span> <span class="mi">0</span>
+                        <span class="n">last_datum</span> <span class="o">=</span> <span class="n">shape_matched</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">last_datum</span> <span class="o">=</span> <span class="n">predicted_profile</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                    <span class="n">predicted_profile</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">last_datum</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">t_end</span><span class="o">-</span><span class="n">t_start</span><span class="p">)])</span> <span class="c"># means that the equipment is always on at before and after the current changepoint</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">change_profile</span> <span class="o">=</span> <span class="p">[]</span>
+                    <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">shape_list</span><span class="p">[</span><span class="mi">0</span><span class="p">])):</span>
+                        <span class="k">if</span> <span class="n">shape_list</span><span class="p">[</span><span class="n">i_cp</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">obs_mat</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">][</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                            <span class="n">change_profile</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">shape_matched</span><span class="p">[</span><span class="n">i_shape</span><span class="p">])</span>
+                    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">change_profile</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                        <span class="n">change_profile</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">change_profile</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+                    <span class="n">change_profile</span> <span class="o">=</span> <span class="n">change_profile</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="p">(</span><span class="n">t_end</span><span class="o">-</span><span class="n">t_start</span><span class="p">)</span> <span class="o">&gt;</span> <span class="nb">len</span><span class="p">(</span> <span class="n">shape_matched</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="p">):</span>
+                        <span class="n">predicted_profile</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span> <span class="nb">list</span><span class="p">(</span><span class="n">change_profile</span><span class="p">)</span> <span class="p">)</span>
+                        <span class="n">predicted_profile</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span> <span class="p">[</span><span class="n">change_profile</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">t_end</span><span class="o">-</span><span class="n">t_start</span><span class="o">-</span><span class="nb">len</span><span class="p">(</span> <span class="n">shape_matched</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="p">))]</span> <span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">predicted_profile</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span> <span class="n">change_profile</span><span class="p">[:</span><span class="n">t_end</span><span class="o">-</span><span class="n">t_start</span><span class="p">]</span> <span class="p">)</span>
+                <span class="sd">&#39;&#39;&#39; test code&#39;&#39;&#39;</span>
+
+    <span class="c">#print predicted_profile</span>
+    <span class="n">power_sum</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">predicted_profile</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="c">#print power_sum</span>
+    <span class="n">others</span> <span class="o">=</span> <span class="n">predicted_profile</span><span class="p">[</span><span class="n">n_equipment_type</span><span class="p">]</span>
+
+    <span class="n">power_sum</span><span class="p">[</span><span class="n">power_sum</span> <span class="o">==</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">predicted_profile_2</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">multiply</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">raw_data</span><span class="p">),</span><span class="n">np</span><span class="o">.</span><span class="n">divide</span><span class="p">(</span><span class="n">t</span><span class="p">,</span><span class="n">power_sum</span><span class="p">))</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">predicted_profile</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span>
+    <span class="c">#print predicted_profile_2</span>
+    
+    <span class="k">return</span> <span class="n">predicted_profile_2</span>
+    <span class="c">#predicted_profile_2 = [np.multiply(np.array([x-y for x,y in zip(raw_data,others)]), np.divide(t, power_sum)) for t in predicted_profile[:-1]]</span>
+    
+    <span class="c">#predicted_profile_2.append(np.array(others))</span>
+    <span class="c"># the above line may cause the problem since this is assuming all the powers used are assigned to the known equipments </span>
+    <span class="c">#return predicted_profile_2#.append(np.array(others))    </span>
+
+
+<span class="k">def</span> <span class="nf">rel_change_filter_0819_3</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">data_input</span><span class="p">,</span> <span class="n">thre</span><span class="o">=.</span><span class="mi">2</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    filter data based on relative change</span>
+<span class="sd">    data points in data_input that below or above both neighbouring points</span>
+<span class="sd">    and have relative change above thre will be set as the average of neighbouring data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">thre_2</span> <span class="o">=</span> <span class="n">thre</span><span class="o">/</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="n">thre</span><span class="p">)</span>
+    <span class="n">id_filter</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_input</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> 
+     <span class="k">if</span> <span class="p">(</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">&gt;</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">and</span> <span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">&gt;</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span> <span class="ow">and</span> <span class="n">rel_change</span><span class="p">(</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span><span class="n">i</span><span class="o">+</span><span class="mi">2</span><span class="p">])</span><span class="o">&gt;</span><span class="n">thre</span><span class="p">)</span> <span class="ow">or</span>
+                 <span class="p">(</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">&lt;</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">and</span> <span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">&lt;</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span> <span class="ow">and</span> <span class="n">rel_change</span><span class="p">(</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span><span class="n">i</span><span class="o">+</span><span class="mi">2</span><span class="p">])</span><span class="o">&gt;</span><span class="n">thre_2</span><span class="p">)</span>
+    <span class="p">]</span>
+    <span class="n">data_input_2</span> <span class="o">=</span> <span class="p">[(</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">+</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">])</span><span class="o">/</span><span class="mi">2</span> <span class="k">if</span> <span class="p">(</span><span class="n">i</span> <span class="ow">in</span> <span class="n">id_filter</span><span class="p">)</span> <span class="k">else</span> <span class="n">dat</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">dat</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">data_input</span><span class="p">)</span> <span class="p">]</span>
+    <span class="k">return</span> <span class="n">t</span><span class="p">,</span> <span class="n">data_input_2</span>
+
+<span class="k">def</span> <span class="nf">rel_change</span><span class="p">(</span><span class="n">y</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    return relative change comparing to the closer neighbouring points</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">y</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">y</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">y</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">y</span><span class="p">[</span><span class="mi">2</span><span class="p">])])</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span><span class="n">y</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+
+<span class="k">def</span> <span class="nf">power_disaggregate</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">raw_data</span><span class="p">,</span>
+                       <span class="n">change_shape</span><span class="p">,</span>
+                       <span class="n">init_pos_std</span><span class="p">,</span> 
+                       <span class="n">shape_matched</span><span class="p">,</span> 
+                       <span class="n">state_prob_list</span><span class="p">,</span> <span class="n">n_equipment_type</span><span class="p">,</span> <span class="n">n_equipment</span><span class="p">,</span> <span class="n">obs_mat</span><span class="p">):</span>
+
+    <span class="n">opt</span> <span class="o">=</span> <span class="n">set_disaggregation_option</span><span class="p">(</span><span class="n">change_shape</span><span class="o">=</span><span class="n">change_shape</span><span class="p">,</span> 
+                               <span class="n">init_pos_std</span> <span class="o">=</span> <span class="n">init_pos_std</span>
+                                <span class="p">)</span>
+    
+    <span class="n">_</span><span class="p">,</span> <span class="n">data</span> <span class="o">=</span> <span class="n">rel_change_filter_0819_3</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">raw_data</span><span class="p">)),</span> <span class="n">raw_data</span><span class="p">,</span> <span class="n">thre</span><span class="o">=.</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">t_data</span> <span class="o">=</span> <span class="n">t</span>
+    
+    <span class="n">cp_list</span> <span class="o">=</span> <span class="n">disaggregate</span><span class="p">(</span> <span class="n">data</span><span class="p">,</span> <span class="n">opt</span> <span class="p">)</span>
+    <span class="c">#opt = set_disaggregation_option(change_shape=change_shape, </span>
+    <span class="c">#                                    init_pos_std = init_pos_std</span>
+    <span class="c">#                                   )</span>
+    <span class="n">data_seg</span><span class="p">,</span> <span class="n">n_seg</span><span class="p">,</span> <span class="n">temp</span> <span class="o">=</span> <span class="n">segment_data</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">cp_list</span><span class="p">)</span>
+
+    <span class="n">n_shape_matched</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">shape_matched</span><span class="p">)</span>
+    <span class="n">all_shape_code</span> <span class="o">=</span> <span class="n">shape_code_gen</span><span class="p">(</span><span class="n">n_shape_matched</span><span class="p">)</span>
+    <span class="n">shape_dict</span> <span class="o">=</span> <span class="n">combine_shape</span><span class="p">(</span><span class="n">shape_matched</span><span class="p">,</span> <span class="n">all_shape_code</span><span class="p">)</span>
+
+    <span class="n">shape_prob_list</span> <span class="o">=</span> <span class="n">get_seg_prob</span><span class="p">(</span><span class="n">data_seg</span><span class="p">,</span> <span class="n">shape_dict</span><span class="p">)</span>
+    
+    <span class="n">trace_list</span><span class="p">,</span> <span class="n">shape_list</span> <span class="o">=</span> <span class="n">viterbi</span><span class="p">(</span><span class="n">shape_prob_list</span><span class="p">,</span> <span class="n">state_prob_list</span><span class="p">,</span> <span class="n">data_seg</span><span class="p">,</span> <span class="n">obs_mat</span><span class="p">)</span>
+
+    <span class="n">predicted_profile</span> <span class="o">=</span> <span class="n">generate_predicted_profile</span><span class="p">(</span><span class="n">cp_list</span><span class="p">,</span> <span class="n">shape_matched</span><span class="p">,</span> <span class="n">shape_list</span><span class="p">,</span> <span class="n">raw_data</span><span class="p">,</span> <span class="n">n_equipment_type</span><span class="p">,</span> <span class="n">obs_mat</span><span class="p">,</span> 
+                                                       <span class="n">trace_list</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">predicted_profile</span>
+    
+<span class="k">def</span> <span class="nf">read_dat</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+
+    <span class="n">dat</span> <span class="o">=</span> <span class="p">[</span><span class="n">point</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="o">/</span><span class="mi">3</span> <span class="k">for</span> <span class="n">point</span> <span class="ow">in</span> <span class="n">data</span><span class="p">]</span>
+
+    <span class="n">t_utc</span> <span class="o">=</span> <span class="p">[</span><span class="n">point</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">point</span> <span class="ow">in</span> <span class="n">data</span><span class="p">]</span>
+    <span class="n">time_tmp</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">t_utc</span><span class="p">,</span> <span class="n">infer_datetime_format</span><span class="o">=</span><span class="k">True</span><span class="p">)</span>
+    <span class="n">start_time</span> <span class="o">=</span> <span class="n">time_tmp</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    
+    <span class="n">t</span> <span class="o">=</span> <span class="p">[(</span><span class="n">x</span> <span class="o">-</span> <span class="n">start_time</span><span class="p">)</span><span class="o">.</span><span class="n">seconds</span><span class="o">/</span><span class="mf">3600.</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">time_tmp</span><span class="p">]</span>
+    
+    <span class="k">return</span> <span class="n">t</span><span class="p">,</span> <span class="n">dat</span><span class="p">,</span> <span class="n">t_utc</span>
+
+
+<span class="k">def</span> <span class="nf">construct_equipment_to_shape_map</span><span class="p">(</span> <span class="n">equipment</span><span class="p">,</span> <span class="n">shape_2_equip_map</span> <span class="p">):</span>
+    <span class="n">equip_2_shape_map</span> <span class="o">=</span> <span class="p">{</span> <span class="n">i</span><span class="p">[</span><span class="s">&#39;id&#39;</span><span class="p">]:[]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">equipment</span> <span class="p">}</span>
+    <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">shape_2_equip_map</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">m</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="n">equip_2_shape_map</span><span class="p">[</span><span class="n">e</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">m</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">equip_2_shape_map</span>
+
+
+<span class="k">def</span> <span class="nf">complete_shapes</span><span class="p">(</span> <span class="n">equip_2_shape_map</span><span class="p">,</span> <span class="n">shape_2_equip_map</span><span class="p">,</span> <span class="n">shape_dict</span><span class="p">,</span> <span class="n">equipment</span><span class="p">,</span> <span class="n">SHAPE_LEN</span> <span class="o">=</span> <span class="mi">50</span> <span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        for any equipment with no mapped shapes, add a shape based on its power </span>
+<span class="sd">        parameter, and update equip_2_shape_map, shape_2_equip_map, shape_dict</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    
+    <span class="c"># find out ones with no mapping</span>
+    <span class="n">equip_no_shape</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="n">equip_2_shape_map</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">y</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">]</span>
+    
+    <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">equip_no_shape</span><span class="p">:</span>
+        <span class="c"># find that equipment from equipment</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">equipment</span><span class="p">[</span><span class="n">e</span><span class="p">]</span>
+        
+        <span class="n">i_shape_to_be_added</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">shape_dict</span><span class="p">)</span>
+        <span class="n">shape_dict</span><span class="p">[</span><span class="n">i_shape_to_be_added</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span> <span class="n">t</span><span class="p">[</span><span class="s">&#39;power&#39;</span><span class="p">]</span> <span class="p">]</span> <span class="o">*</span> <span class="n">SHAPE_LEN</span>
+        <span class="n">shape_2_equip_map</span><span class="p">[</span><span class="n">i_shape_to_be_added</span><span class="p">]</span> <span class="o">=</span> <span class="n">e</span>
+        <span class="n">equip_2_shape_map</span><span class="p">[</span> <span class="n">e</span> <span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="n">i_shape_to_be_added</span> <span class="p">)</span>
+    
+    <span class="k">return</span> <span class="n">equip_2_shape_map</span><span class="p">,</span> <span class="n">shape_2_equip_map</span><span class="p">,</span> <span class="n">shape_dict</span>
+
+<span class="k">def</span> <span class="nf">viterbi_2</span><span class="p">(</span><span class="n">data_seg</span><span class="p">,</span> <span class="n">equip_2_shape_map</span><span class="p">,</span> <span class="n">shape_dict</span><span class="p">,</span> <span class="n">equipment</span><span class="p">,</span> <span class="n">data_seg_raw_last</span><span class="p">,</span> <span class="n">init_state</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">),</span> <span class="n">init_state_conf</span> <span class="o">=</span> <span class="mf">0.9</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        apply viterbi algorithm to segmented data series</span>
+<span class="sd">        data_seg: segmented time series, list of list of floats</span>
+<span class="sd">        equip_2_shape_map: map from int to list of shape id(s)</span>
+<span class="sd">        equipment: list of equipment specs, including at least an id, and number as the number of equipment</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+    
+    <span class="k">assert</span><span class="p">(</span> <span class="nb">type</span><span class="p">(</span> <span class="n">init_state</span> <span class="p">)</span> <span class="ow">is</span> <span class="nb">tuple</span> <span class="p">)</span>  <span class="c"># make sure that init_state is tuple</span>
+    
+    <span class="c"># viterbi here</span>
+    <span class="n">n_seg</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_seg</span><span class="p">)</span>
+    <span class="n">n_equipment</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">equipment</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">init_state</span><span class="p">)</span> <span class="o">!=</span> <span class="n">n_equipment</span><span class="p">:</span>
+        <span class="k">raise</span><span class="p">(</span><span class="s">&quot;No. of appliances does not match: in viterbi_2()&quot;</span><span class="p">)</span>
+    
+    <span class="c"># Generate probability of all state</span>
+    <span class="c"># all_state_list = all_possible_state_helper( equipment )  # generate all possible next state</span>
+    <span class="c"># state_prob_list = {</span>
+    <span class="c">#     x:( init_state_conf if x == init_state else (1.-init_state_conf)/(len(all_state_list)-1) )</span>
+    <span class="c">#     for x in all_state_list</span>
+    <span class="c"># }</span>
+    <span class="n">state_prob_list</span> <span class="o">=</span> <span class="n">get_power_prior</span><span class="p">(</span><span class="n">data_seg</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span> <span class="n">equipment</span><span class="p">)</span>
+    
+    <span class="n">best_state_transtion_recorder</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c"># more description here</span>
+    <span class="n">state_prob_recorder</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c"># more description here</span>
+    <span class="n">past_state_best_path_recorder</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c"># more description here</span>
+
+    <span class="k">for</span> <span class="n">i_seg</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_seg</span><span class="p">):</span>
+        <span class="c"># for each segment, repeat the following things:</span>
+        <span class="c">#   for each state, and for each possible last_state, calculate the likelihood that</span>
+        <span class="c">#   the transition is supported by data</span>
+        <span class="n">seg</span> <span class="o">=</span> <span class="n">data_seg</span><span class="p">[</span><span class="n">i_seg</span><span class="p">]</span>  <span class="c"># segment series </span>
+            
+        <span class="n">next_state_list</span> <span class="o">=</span> <span class="n">all_possible_state_helper</span><span class="p">(</span> <span class="n">equipment</span> <span class="p">)</span>  <span class="c"># all possible next state</span>
+        
+        <span class="n">next_state_prob_list</span> <span class="o">=</span> <span class="p">{</span> <span class="n">x</span><span class="p">:</span><span class="mi">0</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">next_state_list</span> <span class="p">}</span>  <span class="c"># dict to record prob</span>
+        <span class="n">past_state_best_list</span> <span class="o">=</span> <span class="p">{</span>  <span class="p">}</span>  <span class="c"># dict from next state to best past state</span>
+        <span class="n">past_state_best_path_list</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c"># the correpsonding path</span>
+        
+        <span class="n">power_info</span> <span class="o">=</span> <span class="n">get_power_prior</span><span class="p">(</span> <span class="n">data_seg_raw_last</span><span class="p">[</span><span class="n">i_seg</span><span class="p">],</span> <span class="n">equipment</span> <span class="p">)</span>
+        <span class="nb">print</span> <span class="n">i_seg</span><span class="p">,</span> <span class="n">data_seg_raw_last</span><span class="p">[</span><span class="n">i_seg</span><span class="p">],</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">power_info</span><span class="o">.</span><span class="n">items</span><span class="p">(),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">kv</span><span class="p">:</span> <span class="n">kv</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="k">True</span><span class="p">)</span>
+        <span class="nb">print</span> <span class="s">&quot;&quot;</span>
+        
+        <span class="k">for</span> <span class="n">next_state</span> <span class="ow">in</span> <span class="n">next_state_prob_list</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>  <span class="c"># for each of the all possible equipment condition combinations</span>
+            <span class="n">past_state_prob_recorder</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c"># record the probability</span>
+            <span class="n">past_state_prob_path_recorder</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c"># record path to it</span>
+            
+            <span class="n">past_state_list</span> <span class="o">=</span> <span class="n">gen_previous_state</span><span class="p">(</span> <span class="n">next_state</span><span class="p">,</span> <span class="n">max_change</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="n">constraint</span><span class="o">=</span><span class="p">[</span><span class="n">e</span><span class="p">[</span><span class="s">&#39;number&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">equipment</span> <span class="p">])</span>
+            <span class="k">for</span> <span class="n">past_state</span> <span class="ow">in</span> <span class="n">past_state_list</span><span class="p">:</span>
+                <span class="c"># note that for each past_state -&gt; next_state, there can be multiple shapes that make this happen,</span>
+                <span class="c"># the function &quot;get_prob&quot; is to look up the most probable one</span>
+                <span class="n">transition_prob</span><span class="p">,</span> <span class="n">max_prob_path</span> <span class="o">=</span> <span class="n">get_prob</span><span class="p">(</span> <span class="n">past_state</span><span class="p">,</span> <span class="n">next_state</span><span class="p">,</span> <span class="n">seg</span><span class="p">,</span> <span class="n">equip_2_shape_map</span><span class="p">,</span> <span class="n">shape_dict</span><span class="p">)</span>
+                
+                <span class="n">n_diff</span> <span class="o">=</span> <span class="n">get_n_diff</span><span class="p">(</span><span class="n">next_state</span><span class="p">,</span> <span class="n">past_state</span><span class="p">)</span>
+                <span class="n">transition_prob</span> <span class="o">=</span> <span class="n">transition_prob</span> <span class="o">/</span> <span class="mf">5.</span><span class="o">**</span><span class="n">n_diff</span>
+                <span class="c"># print past_state, next_state, n_diff</span>
+                
+                <span class="n">transition_prob</span> <span class="o">=</span> <span class="n">transition_prob</span> <span class="o">*</span> <span class="n">power_info</span><span class="p">[</span><span class="n">next_state</span><span class="p">]</span>
+                
+                <span class="n">past_state_prob_recorder</span><span class="p">[</span> <span class="n">past_state</span> <span class="p">]</span> <span class="o">=</span> <span class="n">transition_prob</span> <span class="o">*</span> <span class="n">state_prob_list</span><span class="p">[</span> <span class="n">past_state</span> <span class="p">]</span>  <span class="c"># new probability = probability to reach last state * transition probability</span>
+                <span class="n">past_state_prob_path_recorder</span><span class="p">[</span> <span class="n">past_state</span> <span class="p">]</span> <span class="o">=</span> <span class="n">max_prob_path</span>
+            
+            <span class="c"># looking for the best path to this state</span>
+            <span class="n">past_state_best</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+            <span class="n">past_state_best_path</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+            <span class="n">past_state_best_prob</span> <span class="o">=</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">inf</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span><span class="n">v</span> <span class="ow">in</span> <span class="n">past_state_prob_recorder</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">v</span> <span class="o">&gt;</span> <span class="n">past_state_best_prob</span><span class="p">:</span>
+                    <span class="n">past_state_best</span> <span class="o">=</span> <span class="n">k</span>
+                    <span class="n">past_state_best_prob</span> <span class="o">=</span> <span class="n">v</span>
+                    <span class="n">past_state_best_path</span> <span class="o">=</span> <span class="n">past_state_prob_path_recorder</span><span class="p">[</span><span class="n">past_state_best</span><span class="p">]</span>
+        
+            <span class="n">next_state_prob_list</span><span class="p">[</span><span class="n">next_state</span><span class="p">]</span> <span class="o">=</span> <span class="n">past_state_best_prob</span>
+            <span class="n">past_state_best_list</span><span class="p">[</span><span class="n">next_state</span><span class="p">]</span> <span class="o">=</span> <span class="n">past_state_best</span>
+            <span class="n">past_state_best_path_list</span><span class="p">[</span><span class="n">next_state</span><span class="p">]</span> <span class="o">=</span> <span class="n">past_state_best_path</span>
+            
+            <span class="n">state_prob_list</span> <span class="o">=</span> <span class="n">next_state_prob_list</span>
+            <span class="n">best_state_transtion_recorder</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="n">past_state_best_list</span> <span class="p">)</span>
+            <span class="n">state_prob_recorder</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">next_state_prob_list</span><span class="p">)</span>
+        <span class="n">past_state_best_path_recorder</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">past_state_best_path_list</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">state_prob_list</span><span class="p">,</span> <span class="n">best_state_transtion_recorder</span><span class="p">,</span> <span class="n">past_state_best_path_recorder</span>
+
+<span class="k">def</span> <span class="nf">all_possible_state_helper</span><span class="p">(</span> <span class="n">equipment</span> <span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    create a list of tuples to represent all possible equipment combinations</span>
+<span class="sd">    equipment is a list of dictionary that contain at least a key called number</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">e</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span> <span class="n">equipment</span> <span class="p">):</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">e</span><span class="p">[</span><span class="s">&#39;number&#39;</span><span class="p">]</span><span class="o">+</span><span class="mi">1</span><span class="p">):</span>  <span class="c"># add one to include maximal number of equipment</span>
+                <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="p">)</span> <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">new_result</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">result</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">e</span><span class="p">[</span><span class="s">&#39;number&#39;</span><span class="p">]</span><span class="o">+</span><span class="mi">1</span><span class="p">):</span>
+                    <span class="n">new_result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="nb">tuple</span><span class="p">([</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">k</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="n">j</span><span class="p">,])</span> <span class="p">)</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">new_result</span>
+    <span class="k">return</span> <span class="n">result</span>
+
+
+
+<span class="k">def</span> <span class="nf">back_tracking</span><span class="p">(</span><span class="n">state_prob_list</span><span class="p">,</span> <span class="n">best_state_transtion_recorder</span><span class="p">,</span> <span class="n">past_state_best_path_recorder</span><span class="p">,</span> <span class="n">shape_dict</span><span class="p">):</span>
+    <span class="n">trace_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">shape_list</span> <span class="o">=</span> <span class="p">[]</span>
+    
+    <span class="n">n_shape</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">shape_dict</span><span class="p">)</span>
+    
+    <span class="n">current_state</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">inf</span>
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">state_prob_list</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">v</span> <span class="o">&gt;</span> <span class="n">t</span><span class="p">:</span>
+            <span class="n">t</span> <span class="o">=</span> <span class="n">v</span>
+            <span class="n">current_state</span> <span class="o">=</span> <span class="n">k</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">best_state_transtion_recorder</span><span class="p">))):</span>
+        <span class="n">best_path</span> <span class="o">=</span> <span class="n">past_state_best_path_recorder</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">current_state</span><span class="p">]</span>
+        <span class="n">path_list</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">n_shape</span>
+        
+        <span class="n">best_path</span> <span class="o">=</span> <span class="n">best_path</span>
+        <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">best_path</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s">&#39;+&#39;</span><span class="p">:</span>
+                <span class="n">path_list</span><span class="p">[</span> <span class="nb">int</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">path_list</span><span class="p">[</span> <span class="nb">int</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span> <span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+                <span class="k">except</span><span class="p">:</span>
+                    <span class="n">path_list</span><span class="p">[</span> <span class="nb">int</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span> <span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+        
+        <span class="n">trace_list</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">current_state</span><span class="p">)</span>
+        <span class="n">shape_list</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">path_list</span><span class="p">)</span>
+        
+        <span class="n">current_state</span> <span class="o">=</span> <span class="n">best_state_transtion_recorder</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">current_state</span><span class="p">]</span>
+    <span class="n">trace_list</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">current_state</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">trace_list</span><span class="p">,</span> <span class="n">shape_list</span>
+
+<span class="k">def</span> <span class="nf">generate_predicted_profile_2</span><span class="p">(</span><span class="n">cp_list</span><span class="p">,</span> <span class="n">shape_matched</span><span class="p">,</span> <span class="n">shape_list</span><span class="p">,</span> <span class="n">raw_data</span><span class="p">,</span> <span class="n">n_equipment_type</span><span class="p">,</span> <span class="n">equip_2_shape_map</span><span class="p">,</span> <span class="n">trace_list</span><span class="p">,</span> <span class="n">equipment</span><span class="p">,</span> <span class="n">SHAPE_LEN</span> <span class="o">=</span> <span class="mi">50</span><span class="p">):</span>
+    
+    <span class="n">predicted_profile</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_equipment_type</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span> <span class="p">]</span>
+    
+    <span class="n">basal_noise</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">predicted_profile</span><span class="p">[</span><span class="n">n_equipment_type</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span> <span class="p">[</span><span class="n">basal_noise</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">raw_data</span><span class="p">))]</span> <span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">i_equipment</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_equipment_type</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">i_cp</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">cp_list</span><span class="p">)):</span>
+            <span class="n">t_start</span> <span class="o">=</span> <span class="n">cp_list</span><span class="p">[</span><span class="n">i_cp</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">i_cp</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">cp_list</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                <span class="n">t_end</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">raw_data</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">t_end</span> <span class="o">=</span> <span class="n">cp_list</span><span class="p">[</span><span class="n">i_cp</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">trace_list</span><span class="p">[</span><span class="n">i_cp</span><span class="p">][</span><span class="n">i_equipment</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">predicted_profile</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="mi">0</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">t_end</span><span class="o">-</span><span class="n">t_start</span><span class="p">)])</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">i_cp</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="p">(</span><span class="n">trace_list</span><span class="p">[</span><span class="n">i_cp</span><span class="p">][</span><span class="n">i_equipment</span><span class="p">]</span> <span class="o">==</span> <span class="n">trace_list</span><span class="p">[</span><span class="n">i_cp</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="n">i_equipment</span><span class="p">]):</span>
+                    <span class="k">if</span> <span class="n">i_cp</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                        <span class="n">last_datum</span> <span class="o">=</span> <span class="n">equipment</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">][</span><span class="s">&#39;power&#39;</span><span class="p">]</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">last_datum</span> <span class="o">=</span> <span class="n">predicted_profile</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                    <span class="n">predicted_profile</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">last_datum</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">t_end</span><span class="o">-</span><span class="n">t_start</span><span class="p">)])</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">change_profile</span> <span class="o">=</span> <span class="p">[]</span>
+                    
+                    <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">shape_list</span><span class="p">[</span><span class="mi">0</span><span class="p">])):</span>
+                        <span class="k">if</span> <span class="p">(</span><span class="n">i_shape</span> <span class="ow">in</span> <span class="n">equip_2_shape_map</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">])</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                            <span class="k">if</span> <span class="n">shape_list</span><span class="p">[</span><span class="n">i_cp</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                                <span class="n">change_profile</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">shape_matched</span><span class="p">[</span><span class="n">i_shape</span><span class="p">])</span>
+                            <span class="k">elif</span> <span class="n">shape_list</span><span class="p">[</span><span class="n">i_cp</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="n">i_shape</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                                <span class="n">change_profile</span><span class="o">.</span><span class="n">append</span><span class="p">([</span> <span class="o">-</span><span class="n">shape_matched</span><span class="p">[</span><span class="n">i_shape</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="p">]</span><span class="o">*</span><span class="n">SHAPE_LEN</span><span class="p">)</span>
+                
+                    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">change_profile</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                        <span class="n">change_profile</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">change_profile</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">change_profile</span> <span class="o">=</span> <span class="n">change_profile</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            
+        <span class="k">if</span> <span class="n">i_cp</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">last_datum</span> <span class="o">=</span> <span class="n">equipment</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">][</span><span class="s">&#39;power&#39;</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">last_datum</span> <span class="o">=</span> <span class="n">predicted_profile</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        
+            <span class="n">change_profile</span> <span class="o">=</span> <span class="p">[</span> <span class="n">last_datum</span> <span class="o">+</span> <span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">change_profile</span><span class="p">]</span>
+                
+        <span class="k">if</span> <span class="p">(</span><span class="n">t_end</span><span class="o">-</span><span class="n">t_start</span><span class="p">)</span> <span class="o">&gt;</span> <span class="nb">len</span><span class="p">(</span> <span class="n">shape_matched</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="p">):</span>
+            <span class="n">predicted_profile</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span> <span class="nb">list</span><span class="p">(</span><span class="n">change_profile</span><span class="p">)</span> <span class="p">)</span>
+            <span class="n">predicted_profile</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span> <span class="p">[</span><span class="n">change_profile</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">t_end</span><span class="o">-</span><span class="n">t_start</span><span class="o">-</span><span class="nb">len</span><span class="p">(</span> <span class="n">shape_matched</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span> <span class="p">))]</span> <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">predicted_profile</span><span class="p">[</span><span class="n">i_equipment</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span> <span class="n">change_profile</span><span class="p">[:</span><span class="n">t_end</span><span class="o">-</span><span class="n">t_start</span><span class="p">]</span> <span class="p">)</span>
+
+    <span class="n">power_sum</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">predicted_profile</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">predicted_profile_2</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">multiply</span><span class="p">(</span><span class="n">raw_data</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">divide</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">power_sum</span><span class="p">))</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">predicted_profile</span><span class="p">]</span>
+    <span class="c"># predicted_profile_2 = predicted_profile</span>
+    
+    <span class="k">return</span> <span class="n">predicted_profile_2</span>
+<span class="k">def</span> <span class="nf">get_prob</span><span class="p">(</span> <span class="n">past_state</span><span class="p">,</span> <span class="n">next_state</span><span class="p">,</span> <span class="n">seg</span><span class="p">,</span> <span class="n">equip_2_shape_map</span><span class="p">,</span> <span class="n">shape_dict</span><span class="p">,</span> <span class="n">SHAPE_LEN</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span> <span class="n">var_measurement</span> <span class="o">=</span> <span class="mi">800</span><span class="p">,</span> <span class="n">verbose</span> <span class="o">=</span> <span class="mi">0</span> <span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;calculate the probability that seg is generated by any pathway from past_state to next_state&quot;&quot;&quot;</span>
+    <span class="n">all_possible_shape</span> <span class="o">=</span> <span class="p">[[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">SHAPE_LEN</span><span class="p">]</span>
+    <span class="n">all_possible_shape_path</span> <span class="o">=</span> <span class="p">[</span> <span class="p">[]</span> <span class="p">]</span>
+    
+    <span class="c"># do not allow shut down and turn on together, this can be relaxed if needed</span>
+    <span class="n">flag</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">past_state</span><span class="p">)):</span>  
+        <span class="k">if</span> <span class="n">flag</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">past_state</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">!=</span> <span class="n">next_state</span><span class="p">[</span><span class="n">i</span><span class="p">]:</span>
+            <span class="n">flag</span> <span class="o">=</span> <span class="n">past_state</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">next_state</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">flag</span> <span class="o">!=</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">past_state</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">!=</span> <span class="n">next_state</span><span class="p">[</span><span class="n">i</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="n">flag</span> <span class="o">!=</span> <span class="p">(</span><span class="n">past_state</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">next_state</span><span class="p">[</span><span class="n">i</span><span class="p">]):</span>
+                <span class="k">return</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">,</span> <span class="p">[]</span>
+    
+    <span class="k">for</span> <span class="n">pos</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">past_state</span><span class="p">)):</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">past_state</span><span class="p">[</span><span class="n">pos</span><span class="p">]</span> <span class="o">==</span> <span class="n">next_state</span><span class="p">[</span><span class="n">pos</span><span class="p">]):</span>  <span class="c"># this equipment is not changed</span>
+            <span class="k">continue</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">all_possible_shape_new</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">all_possible_shape_path_new</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">base_shape</span><span class="p">,</span> <span class="n">path</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">all_possible_shape</span><span class="p">,</span> <span class="n">all_possible_shape_path</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">i_shape</span> <span class="ow">in</span> <span class="n">equip_2_shape_map</span><span class="p">[</span><span class="n">pos</span><span class="p">]:</span>  <span class="c"># only allow changing through the same shape</span>
+                    <span class="n">old_path</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+                    <span class="c"># tmp = [x for x in path]  # copy</span>
+                    <span class="k">if</span> <span class="n">next_state</span><span class="p">[</span><span class="n">pos</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">past_state</span><span class="p">[</span><span class="n">pos</span><span class="p">]:</span> <span class="c"># shut down</span>
+                        <span class="n">add_value</span> <span class="o">=</span> <span class="p">[</span> <span class="p">(</span><span class="n">next_state</span><span class="p">[</span><span class="n">pos</span><span class="p">]</span><span class="o">-</span><span class="n">past_state</span><span class="p">[</span><span class="n">pos</span><span class="p">])</span> <span class="o">*</span> <span class="n">shape_dict</span><span class="p">[</span><span class="n">i_shape</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span> <span class="o">*</span> <span class="n">SHAPE_LEN</span>
+                        <span class="k">if</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">old_path</span><span class="p">)</span><span class="o">==</span><span class="n">pos</span><span class="o">+</span><span class="mi">1</span><span class="p">):</span> <span class="c"># this is not the first time, the &#39;pos&#39; equipment change status</span>
+                            <span class="n">old_path</span><span class="p">[</span><span class="n">pos</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">old_path</span><span class="p">[</span><span class="n">pos</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="s">&#39;-&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i_shape</span><span class="p">)</span> <span class="p">,)</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">old_path</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="p">(</span><span class="s">&#39;-&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i_shape</span><span class="p">),)</span> <span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span> <span class="c"># turn on</span>
+                        <span class="n">add_value</span> <span class="o">=</span> <span class="n">shape_dict</span><span class="p">[</span><span class="n">i_shape</span><span class="p">]</span>
+                        <span class="n">add_value</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="o">*</span> <span class="p">(</span><span class="n">next_state</span><span class="p">[</span><span class="n">pos</span><span class="p">]</span><span class="o">-</span><span class="n">past_state</span><span class="p">[</span><span class="n">pos</span><span class="p">])</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">add_value</span><span class="p">]</span>
+                        <span class="k">if</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">old_path</span><span class="p">)</span> <span class="o">==</span> <span class="n">pos</span><span class="o">+</span><span class="mi">1</span><span class="p">):</span>
+                            <span class="n">old_path</span><span class="p">[</span><span class="n">pos</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">old_path</span><span class="p">[</span><span class="n">pos</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="s">&#39;+&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i_shape</span><span class="p">),</span> <span class="p">)</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">old_path</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="p">(</span><span class="s">&#39;+&#39;</span><span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">i_shape</span><span class="p">),)</span> <span class="p">)</span>
+                    <span class="n">all_possible_shape_new</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="p">[</span> <span class="n">x</span><span class="o">+</span><span class="n">y</span> <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">base_shape</span><span class="p">,</span> <span class="n">add_value</span><span class="p">)</span> <span class="p">]</span> <span class="p">)</span>
+                    <span class="n">all_possible_shape_path_new</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">old_path</span><span class="p">)</span>
+            <span class="n">all_possible_shape</span> <span class="o">=</span> <span class="n">all_possible_shape_new</span>
+            <span class="n">all_possible_shape_path</span> <span class="o">=</span> <span class="n">all_possible_shape_path_new</span>
+
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="nb">print</span> <span class="n">all_possible_shape</span>
+        <span class="nb">print</span> <span class="n">all_possible_shape_path</span>
+
+    <span class="c"># look up most probable path</span>
+    <span class="n">max_prob</span> <span class="o">=</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">inf</span>
+    <span class="n">max_prob_path</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="k">for</span> <span class="n">t</span><span class="p">,</span> <span class="n">t2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">all_possible_shape</span><span class="p">,</span> <span class="n">all_possible_shape_path</span><span class="p">):</span>
+        <span class="n">prob</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span> <span class="o">-</span><span class="n">l2_distance</span><span class="p">(</span><span class="n">seg</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span> <span class="o">/</span> <span class="n">var_measurement</span> <span class="p">)</span>
+        <span class="k">if</span> <span class="n">prob</span> <span class="o">&gt;</span> <span class="n">max_prob</span><span class="p">:</span>
+            <span class="n">max_prob</span> <span class="o">=</span> <span class="n">prob</span>
+            <span class="n">max_prob_path</span> <span class="o">=</span> <span class="n">t2</span>
+    <span class="k">return</span> <span class="n">max_prob</span><span class="p">,</span> <span class="n">max_prob_path</span>
+
+
+<span class="k">def</span> <span class="nf">gen_previous_state</span><span class="p">(</span><span class="n">next_state</span><span class="p">,</span> <span class="n">max_change</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="n">allow_pos</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">constraint</span> <span class="o">=</span> <span class="k">None</span><span class="p">):</span>
+    <span class="n">n_equip</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">next_state</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">constraint</span><span class="p">:</span>
+        <span class="n">constraint</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">n_equip</span>
+
+    <span class="k">if</span> <span class="n">allow_pos</span> <span class="o">==</span> <span class="n">n_equip</span> <span class="ow">and</span> <span class="n">max_change</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="n">next_state</span><span class="p">)]</span>
+    <span class="k">if</span> <span class="n">max_change</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="n">next_state</span><span class="p">)]</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="n">next_state</span><span class="p">)];</span>
+    
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span> <span class="n">allow_pos</span><span class="p">,</span> <span class="n">n_equip</span> <span class="p">):</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="o">-</span><span class="n">max_change</span><span class="p">,</span> <span class="n">max_change</span><span class="o">+</span><span class="mi">1</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">j</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">new_next_state</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">next_state</span><span class="p">]</span>  <span class="c"># copy next_state</span>
+            <span class="n">new_next_state</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_next_state</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">j</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">new_next_state</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">new_next_state</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">&gt;</span><span class="n">constraint</span><span class="p">[</span><span class="n">i</span><span class="p">]):</span>
+                <span class="k">continue</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">t</span> <span class="o">=</span> <span class="n">gen_previous_state</span><span class="p">(</span><span class="n">new_next_state</span><span class="p">,</span> <span class="n">max_change</span> <span class="o">=</span> <span class="n">max_change</span><span class="o">-</span><span class="nb">abs</span><span class="p">(</span><span class="n">j</span><span class="p">),</span> <span class="n">allow_pos</span> <span class="o">=</span> <span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">constraint</span> <span class="o">=</span> <span class="n">constraint</span><span class="p">)</span>
+                <span class="n">result</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span> <span class="n">t</span> <span class="p">)</span>
+    <span class="k">return</span> <span class="n">result</span>
+
+<span class="sd">&#39;&#39;&#39; compute all the binary state representation less or equal than 2^n&#39;&#39;&#39;</span>
+<span class="k">def</span> <span class="nf">all_bin_state_helper</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span> <span class="mi">2</span><span class="o">**</span><span class="n">n</span> <span class="p">):</span>
+        <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="n">int2bin</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span> <span class="p">)</span>
+    <span class="k">return</span> <span class="n">result</span>
+
+<span class="sd">&#39;&#39;&#39; transform a decimal interger into binary number&#39;&#39;&#39;</span>
+<span class="k">def</span> <span class="nf">int2bin</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">while</span> <span class="n">n</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="n">i</span> <span class="o">%</span> <span class="mi">2</span> <span class="p">)</span>
+        <span class="n">i</span> <span class="o">/=</span> <span class="mi">2</span>
+        <span class="n">n</span> <span class="o">-=</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">read_dat_0819</span><span class="p">(</span><span class="n">date</span><span class="p">,</span> <span class="n">h_start</span><span class="p">,</span> <span class="n">h_end</span><span class="p">,</span> <span class="n">folder_path</span><span class="p">):</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">dat</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">t_utc</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">start_time</span> <span class="o">=</span> <span class="k">None</span>
+    <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">h_start</span><span class="p">,</span> <span class="n">h_end</span><span class="p">):</span>
+        <span class="n">file_name</span> <span class="o">=</span> <span class="s">&#39;%d-%d-%d.csv&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">date</span><span class="o">.</span><span class="n">month</span><span class="p">,</span> <span class="n">date</span><span class="o">.</span><span class="n">day</span><span class="p">,</span> <span class="n">h</span><span class="p">)</span>
+        <span class="n">file_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">folder_path</span><span class="p">,</span> <span class="n">file_name</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">data_pd</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="n">names</span><span class="o">=</span><span class="p">[</span><span class="s">&#39;time&#39;</span><span class="p">,</span> <span class="s">&#39;data&#39;</span><span class="p">])</span>
+            <span class="n">time_tmp</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">data_pd</span><span class="o">.</span><span class="n">time</span><span class="p">,</span><span class="n">infer_datetime_format</span><span class="o">=</span><span class="k">True</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">start_time</span><span class="p">:</span>
+                <span class="n">start_time</span> <span class="o">=</span> <span class="n">time_tmp</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">tmp</span> <span class="o">=</span> <span class="p">[(</span><span class="n">x</span> <span class="o">-</span> <span class="n">start_time</span><span class="p">)</span><span class="o">.</span><span class="n">seconds</span><span class="o">/</span><span class="mf">3600.</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">time_tmp</span><span class="p">]</span>
+            <span class="n">t</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">tmp</span><span class="p">)</span>
+            <span class="n">t_utc</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">data_pd</span><span class="o">.</span><span class="n">time</span><span class="p">)</span>
+            <span class="n">dat</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span> <span class="p">[</span><span class="n">x</span><span class="o">/</span><span class="mi">3</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">data_pd</span><span class="o">.</span><span class="n">data</span><span class="p">]</span> <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">inst</span><span class="p">:</span>
+            <span class="nb">print</span> <span class="nb">type</span><span class="p">(</span><span class="n">inst</span><span class="p">),</span> <span class="n">inst</span><span class="o">.</span><span class="n">args</span><span class="p">,</span> <span class="n">inst</span>     <span class="c"># the exception instance</span>
+            <span class="nb">print</span> <span class="s">&#39;%s failed&#39;</span> <span class="o">%</span> <span class="n">file_path</span>
+<span class="c">#     t_utc = [x.to_datetime() for x in t_utc]</span>
+    <span class="k">return</span> <span class="n">t</span><span class="p">,</span> <span class="n">dat</span><span class="p">,</span> <span class="n">t_utc</span>
+
+<span class="k">def</span> <span class="nf">get_power_prior</span><span class="p">(</span><span class="n">power</span><span class="p">,</span> <span class="n">equipment</span><span class="p">):</span>
+    <span class="n">noise_ratio</span> <span class="o">=</span> <span class="o">.</span><span class="mi">3</span><span class="p">;</span>
+    <span class="n">bg</span> <span class="o">=</span> <span class="mi">20</span>
+    
+    <span class="n">states</span> <span class="o">=</span> <span class="n">all_possible_state_helper</span><span class="p">(</span> <span class="n">equipment</span> <span class="p">)</span>
+    <span class="n">power_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="p">[</span><span class="s">&#39;power&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">equipment</span><span class="p">]</span>
+    <span class="n">state_power</span> <span class="o">=</span> <span class="p">[</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">t1</span><span class="o">*</span><span class="n">t2</span> <span class="k">for</span> <span class="n">t1</span><span class="p">,</span> <span class="n">t2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">power_list</span><span class="p">))</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">states</span><span class="p">]</span>
+    <span class="n">state_power_sigma</span> <span class="o">=</span> <span class="p">[</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">bg</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">t1</span><span class="o">*</span><span class="p">(</span><span class="n">noise_ratio</span><span class="o">*</span><span class="n">t2</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span> <span class="k">for</span> <span class="n">t1</span><span class="p">,</span> <span class="n">t2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">power_list</span><span class="p">)))</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">states</span><span class="p">]</span>
+    <span class="n">state_prob</span> <span class="o">=</span> <span class="p">[</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">((</span><span class="n">power</span><span class="o">-</span><span class="n">t1</span><span class="p">)</span><span class="o">/</span><span class="n">t2</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="k">for</span> <span class="n">t1</span><span class="p">,</span> <span class="n">t2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">state_power</span><span class="p">,</span> <span class="n">state_power_sigma</span><span class="p">)]</span>
+    
+    <span class="n">state_prob_sum</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">state_prob</span><span class="p">)</span>
+    <span class="n">state_prob</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">/</span><span class="n">state_prob_sum</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">state_prob</span><span class="p">]</span>
+    <span class="n">state_prob_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">t1</span><span class="p">:</span><span class="n">t2</span> <span class="k">for</span> <span class="n">t1</span><span class="p">,</span> <span class="n">t2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">states</span><span class="p">,</span> <span class="n">state_prob</span><span class="p">)}</span>
+    <span class="c"># state_prob_dict = dict(sorted(state_prob_dict.items(), key=lambda kv: kv[1], reverse=True))</span>
+    
+    <span class="k">return</span> <span class="n">state_prob_dict</span>
+
+<span class="sd">&#39;&#39;&#39; functionality: compute the L1 distance of two states &#39;&#39;&#39;</span>
+<span class="k">def</span> <span class="nf">get_n_diff</span><span class="p">(</span><span class="n">next_state</span><span class="p">,</span> <span class="n">past_state</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">([</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">t1</span><span class="o">-</span><span class="n">t2</span><span class="p">)</span> <span class="k">for</span> <span class="n">t1</span><span class="p">,</span> <span class="n">t2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">next_state</span><span class="p">,</span> <span class="n">past_state</span><span class="p">)])</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper"><div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2018, Simo Wu.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.7.0b2</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.10</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

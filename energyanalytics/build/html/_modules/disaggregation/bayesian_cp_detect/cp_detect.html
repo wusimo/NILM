@@ -1,0 +1,677 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" lang="python 2.7.3">
+  <head>
+        <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>disaggregation.bayesian_cp_detect.cp_detect &#8212; disaggregation algorithms 0.0.1 documentation</title>
+    <link rel="stylesheet" href="../../../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <script type="text/javascript" src="../../../_static/documentation_options.js"></script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for disaggregation.bayesian_cp_detect.cp_detect</h1><div class="highlight"><pre>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">scipy</span> <span class="k">as</span> <span class="nn">sp</span>
+<span class="kn">import</span> <span class="nn">matplotlib</span> <span class="k">as</span> <span class="nn">mpl</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">from</span> <span class="nn">os</span> <span class="k">import</span> <span class="n">path</span>
+<span class="kn">import</span> <span class="nn">datetime</span>
+
+
+
+
+<span class="k">def</span> <span class="nf">bayesian_change_point</span><span class="p">(</span><span class="n">data_input</span>
+                          <span class="p">,</span> <span class="n">sigma_measurement</span> <span class="o">=</span> <span class="mi">20</span> <span class="c"># error for single measurement; parameter to tune</span>
+                          <span class="p">,</span> <span class="n">TOL</span> <span class="o">=</span> <span class="mf">0.9999</span> <span class="c"># truncate tails of prob after this value</span>
+                          <span class="p">,</span> <span class="n">mu_prior</span> <span class="o">=</span> <span class="k">None</span>
+                          <span class="p">,</span> <span class="n">sigma_prior</span> <span class="o">=</span> <span class="k">None</span>
+                          <span class="p">,</span> <span class="n">min_length_prior</span> <span class="o">=</span> <span class="mi">5</span>
+                          <span class="p">,</span> <span class="n">gap_prior</span> <span class="o">=</span> <span class="mf">100.</span>
+                          <span class="p">,</span> <span class="n">SIGMA_LOW</span> <span class="o">=</span> <span class="mf">10.</span> <span class="c"># lowest Sigma of average level</span>
+                         <span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;method from Bayesian Online Changepoint Detection&#39;&#39;&#39;</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">mu_prior</span><span class="p">:</span> <span class="c"># set mu&#39;s prior if not specified</span>
+        <span class="n">mu_prior</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">data_input</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">sigma_prior</span><span class="p">:</span>
+        <span class="n">sigma_prior</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">data_input</span><span class="p">)</span>
+    
+    <span class="n">STORAGE_MAX</span> <span class="o">=</span> <span class="mi">10000</span> <span class="c"># at a cost of mem, make a look up table for log H and log 1-H</span>
+    <span class="n">R_MIN</span> <span class="o">=</span> <span class="mi">10</span> <span class="c"># min of length of </span>
+    <span class="n">log_H_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="mi">1</span><span class="o">/</span><span class="p">(</span><span class="n">gap_prior</span><span class="o">*</span><span class="mi">100</span><span class="p">))]</span> <span class="o">*</span> <span class="n">min_length_prior</span> <span class="o">+</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="mi">1</span><span class="o">/</span><span class="n">gap_prior</span><span class="p">)]</span><span class="o">*</span><span class="p">(</span><span class="n">STORAGE_MAX</span><span class="o">-</span><span class="n">min_length_prior</span><span class="p">)</span> <span class="c"># hazard function, log(1-H)</span>
+    <span class="n">log_H_2_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="p">(</span><span class="n">gap_prior</span><span class="o">*</span><span class="mi">100</span><span class="p">))]</span> <span class="o">*</span> <span class="n">min_length_prior</span> <span class="o">+</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="n">gap_prior</span><span class="p">)]</span><span class="o">*</span><span class="p">(</span><span class="n">STORAGE_MAX</span><span class="o">-</span><span class="n">min_length_prior</span><span class="p">)</span> <span class="c"># log(H)</span>
+
+    <span class="n">mu_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_prior</span><span class="p">]</span> <span class="c"># refresh at each measurement, prior mean of mu</span>
+    <span class="n">sigma_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_prior</span><span class="p">]</span> <span class="c"># prior std of mu</span>
+    <span class="n">prob_r_list</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="c"># probability of each r</span>
+
+    <span class="n">prob_r_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">prob_r_list</span><span class="p">]</span> <span class="c"># history record</span>
+    <span class="n">mu_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_list</span><span class="p">]</span>
+    <span class="n">sigma_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_list</span><span class="p">]</span>
+
+    <span class="n">prob_r_list_mod</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">for</span> <span class="n">datum</span> <span class="ow">in</span> <span class="n">data_input</span><span class="p">:</span> <span class="c"># for each new observation</span>
+        <span class="n">predictive_prob</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># /pi_r</span>
+            <span class="o">-</span><span class="p">((</span><span class="n">datum</span><span class="o">-</span><span class="n">mu</span><span class="p">)</span><span class="o">/</span><span class="n">sigma_measurement</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">2.0</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="p">)</span> 
+            <span class="k">for</span> <span class="n">mu</span><span class="p">,</span> <span class="n">sigma</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">mu_list</span><span class="p">,</span> <span class="n">sigma_list</span><span class="p">)</span>
+        <span class="p">]</span>
+        <span class="n">growth_prob</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># prior * /pi_r * (1-H)</span>
+            <span class="n">p1</span> <span class="o">+</span> <span class="n">p2</span> <span class="o">+</span> <span class="n">log_H_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> 
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">p1</span><span class="p">,</span> <span class="n">p2</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">predictive_prob</span><span class="p">,</span> <span class="n">prob_r_list</span><span class="p">))</span>
+        <span class="p">]</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">change_prob</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">misc</span><span class="o">.</span><span class="n">logsumexp</span><span class="p">([</span> <span class="c"># change point prob</span>
+                <span class="n">p1</span> <span class="o">+</span> <span class="n">p2</span> <span class="o">+</span> <span class="n">log_H_2_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> 
+                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">p1</span><span class="p">,</span> <span class="n">p2</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">predictive_prob</span><span class="p">,</span> <span class="n">prob_r_list</span><span class="p">))</span>
+            <span class="p">])</span>
+        <span class="k">except</span><span class="p">:</span> <span class="c"># current implement allows len(prob_r_list) to only reach STORAGE_MAX</span>
+            <span class="k">raise</span><span class="p">(</span><span class="s">&#39;power not change for a long time, reached max 1-H list&#39;</span><span class="p">)</span>
+        <span class="n">prob_r_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">change_prob</span><span class="p">]</span> <span class="c"># posterior</span>
+        <span class="n">prob_r_list_update</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">growth_prob</span><span class="p">)</span>
+        <span class="n">evidence</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">misc</span><span class="o">.</span><span class="n">logsumexp</span><span class="p">(</span><span class="n">prob_r_list_update</span><span class="p">)</span>
+        <span class="n">prob_r_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">-</span><span class="n">evidence</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">prob_r_list_update</span><span class="p">]</span> <span class="c"># normalization</span>
+
+        <span class="n">mu_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_prior</span><span class="p">]</span>
+        <span class="n">sigma_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_prior</span><span class="p">]</span>
+
+        <span class="n">tmp</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># update mu and sigma of mu</span>
+            <span class="p">((</span><span class="n">mu</span><span class="o">*</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">datum</span><span class="o">*</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">),</span> 
+             <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">*</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">sigma_prior</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span> <span class="p">)</span> 
+            <span class="k">for</span> <span class="n">mu</span><span class="p">,</span><span class="n">sigma</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">mu_list</span><span class="p">,</span> <span class="n">sigma_list</span><span class="p">)</span>
+        <span class="p">]</span>
+
+        <span class="n">mu_list_update</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">t</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tmp</span><span class="p">])</span>
+        <span class="n">sigma_list_update</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">t</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tmp</span><span class="p">])</span>
+        <span class="n">sigma_list_update</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># set lower bound of sigma to be sigma_low</span>
+            <span class="n">t</span> <span class="k">if</span> <span class="n">t</span> <span class="o">&gt;</span> <span class="n">SIGMA_LOW</span> <span class="k">else</span> <span class="n">SIGMA_LOW</span> 
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">sigma_list_update</span>
+        <span class="p">]</span>
+
+        <span class="n">mu_list</span> <span class="o">=</span> <span class="n">mu_list_update</span>
+        <span class="n">sigma_list</span> <span class="o">=</span> <span class="n">sigma_list_update</span>
+        <span class="n">prob_r_list</span> <span class="o">=</span> <span class="n">prob_r_list_update</span>
+        <span class="k">if</span> <span class="n">TOL</span><span class="p">:</span> <span class="c"># truncation</span>
+            <span class="n">r_max</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span> 
+                <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">prob_r_list</span><span class="p">])</span> <span class="o">&gt;</span> <span class="n">TOL</span><span class="p">)</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">r_max</span> <span class="o">&lt;</span> <span class="n">R_MIN</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">prob_r_list</span><span class="p">)</span><span class="o">&gt;</span><span class="n">R_MIN</span><span class="p">:</span>
+                <span class="n">r_max</span> <span class="o">=</span> <span class="n">R_MIN</span>
+            <span class="n">mu_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">r_max</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span>
+            <span class="n">sigma_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">r_max</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span>
+            <span class="n">prob_r_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">prob_r_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">r_max</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span>
+        <span class="n">mu_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mu_list</span><span class="p">)</span> <span class="c"># record</span>
+        <span class="n">sigma_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sigma_list</span><span class="p">)</span>
+        <span class="n">prob_r_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">prob_r_list</span><span class="p">)</span>
+    <span class="n">mu_list_list</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="n">sigma_list_list</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="n">prob_r_list_list</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">mu_list_list</span><span class="p">,</span> <span class="n">sigma_list_list</span><span class="p">,</span> <span class="n">prob_r_list_list</span>
+    
+<span class="k">def</span> <span class="nf">get_change_point</span><span class="p">(</span><span class="n">prob_r_list_list</span>
+                    <span class="p">,</span> <span class="n">min_length_prior</span> <span class="o">=</span> <span class="mi">3</span> <span class="c"># minimal length</span>
+                    <span class="p">,</span> <span class="n">p_thre</span> <span class="o">=</span> <span class="mf">0.07</span> <span class="c"># thre to call a change point</span>
+                    <span class="p">):</span>
+    <span class="n">filtered_change_point_prob</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># for example, for pos 10, </span>
+        <span class="p">(</span><span class="n">i</span><span class="o">-</span><span class="n">min_length_prior</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">j</span><span class="p">[</span><span class="n">min_length_prior</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span> 
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">j</span><span class="p">)</span><span class="o">&gt;</span><span class="n">min_length_prior</span> 
+        <span class="k">else</span> <span class="p">(</span><span class="n">i</span><span class="o">-</span><span class="n">min_length_prior</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> 
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span><span class="n">j</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">prob_r_list_list</span><span class="p">)</span>
+    <span class="p">]</span>
+    <span class="n">tmp2</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">filtered_change_point_prob</span><span class="p">]</span>
+    <span class="n">tmp3</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">min_length_prior</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">filtered_change_point_prob</span><span class="p">)</span><span class="o">-</span><span class="n">min_length_prior</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">tmp2</span><span class="p">[(</span><span class="n">i</span><span class="o">-</span><span class="n">min_length_prior</span><span class="o">+</span><span class="mi">1</span><span class="p">):</span><span class="n">i</span><span class="o">+</span><span class="n">min_length_prior</span><span class="p">])</span><span class="o">+</span><span class="n">i</span><span class="o">-</span><span class="n">min_length_prior</span><span class="o">+</span><span class="mi">1</span> <span class="o">==</span> <span class="n">i</span><span class="p">:</span>
+            <span class="n">tmp3</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">filtered_change_point_prob</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+    <span class="n">tmp3</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">tmp3</span> <span class="k">if</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">&gt;</span><span class="n">p_thre</span><span class="p">]</span> <span class="c"># filter</span>
+
+    <span class="n">changepoint</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">changepoint</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">tmp3</span><span class="p">])</span>
+    <span class="n">changepoint</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="nb">len</span><span class="p">(</span><span class="n">prob_r_list_list</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">changepoint_p</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">changepoint_p</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">tmp3</span><span class="p">])</span>
+    <span class="n">changepoint_p</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="mi">1</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">changepoint</span><span class="p">,</span> <span class="n">changepoint_p</span>
+
+<span class="k">def</span> <span class="nf">plot_change_point</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">data_input</span><span class="p">,</span> <span class="n">changepoint</span><span class="p">):</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">ion</span><span class="p">()</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+    <span class="n">fig</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data_input</span><span class="p">))</span><span class="o">/</span><span class="mi">40</span><span class="p">,</span><span class="mi">4</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">data_input</span><span class="p">,</span> <span class="s">&#39;ko&#39;</span><span class="p">,</span> <span class="n">markersize</span><span class="o">=</span><span class="mf">2.5</span><span class="p">)</span>
+    <span class="n">data_max</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">data_input</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">changepoint</span><span class="p">:</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">([</span><span class="n">t</span><span class="p">[</span><span class="n">x</span><span class="p">],</span><span class="n">t</span><span class="p">[</span><span class="n">x</span><span class="p">]],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span><span class="n">data_max</span><span class="p">],</span> <span class="s">&#39;k--&#39;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    
+    <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">get_dist_to_last_cp</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data_input</span><span class="p">),</span> <span class="n">changepoint</span><span class="p">)</span>
+             <span class="p">,</span> <span class="s">&#39;k-&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s">&#39;time&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s">&#39;power&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">xlim</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_input</span><span class="p">)])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">ylim</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="n">data_max</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">pause</span><span class="p">(</span><span class="o">.</span><span class="mi">0001</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">fig</span>
+
+<span class="k">def</span> <span class="nf">get_dist_to_last_cp</span><span class="p">(</span><span class="n">n</span> <span class="c"># size of the signal array</span>
+                        <span class="p">,</span> <span class="n">changepoint</span><span class="p">):</span>
+    <span class="n">last_cp</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">dist_to_last_cp</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">changepoint</span><span class="p">[</span><span class="n">last_cp</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">i</span><span class="p">:</span>
+            <span class="n">last_cp</span><span class="o">+=</span><span class="mi">1</span>
+            <span class="n">dist_to_last_cp</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="o">-</span><span class="n">changepoint</span><span class="p">[</span><span class="n">last_cp</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">dist_to_last_cp</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span><span class="o">-</span><span class="n">changepoint</span><span class="p">[</span><span class="n">last_cp</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">dist_to_last_cp</span>
+
+<span class="k">def</span> <span class="nf">get_posterior</span><span class="p">(</span><span class="n">data_input</span><span class="p">,</span> <span class="n">changepoint</span>
+                  <span class="p">,</span> <span class="n">sigma_measurement</span> <span class="o">=</span> <span class="mi">20</span> <span class="c"># error for single measurement; parameter to tune</span>
+                  <span class="p">,</span> <span class="n">TOL</span> <span class="o">=</span> <span class="mf">0.9999</span> <span class="c"># truncate tails of prob after this value</span>
+                  <span class="p">,</span> <span class="n">mu_prior</span> <span class="o">=</span> <span class="k">None</span>
+                  <span class="p">,</span> <span class="n">sigma_prior</span> <span class="o">=</span> <span class="k">None</span>
+                  <span class="p">,</span> <span class="n">SIGMA_LOW</span> <span class="o">=</span> <span class="mi">10</span> <span class="c"># lowest Sigma of average level</span>
+                 <span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">mu_prior</span><span class="p">:</span>
+        <span class="n">mu_prior</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">data_input</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">sigma_prior</span><span class="p">:</span>
+        <span class="n">sigma_prior</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">data_input</span><span class="p">)</span>
+
+    <span class="n">mu</span> <span class="o">=</span> <span class="n">mu_prior</span>
+    <span class="n">sigma</span> <span class="o">=</span> <span class="n">sigma_prior</span>
+    <span class="n">mu_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">sigma_list</span> <span class="o">=</span> <span class="p">[]</span>
+    
+    <span class="n">cp_current_index</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">cp_current</span> <span class="o">=</span> <span class="n">changepoint</span><span class="p">[</span><span class="n">cp_current_index</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data_input</span><span class="p">)):</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="n">changepoint</span><span class="p">[</span><span class="n">cp_current_index</span><span class="o">+</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="n">mu</span> <span class="o">=</span> <span class="n">mu_prior</span>
+            <span class="n">sigma</span> <span class="o">=</span> <span class="n">sigma_prior</span>
+
+            <span class="n">cp_current_index</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">cp_current</span> <span class="o">=</span> <span class="n">changepoint</span><span class="p">[</span><span class="n">cp_current_index</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">mu</span> <span class="o">=</span> <span class="p">(</span><span class="n">mu</span><span class="o">*</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">*</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+            <span class="n">sigma</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">*</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">sigma</span><span class="o">&lt;</span><span class="n">SIGMA_LOW</span><span class="p">:</span>
+            <span class="n">sigma</span> <span class="o">=</span> <span class="n">SIGMA_LOW</span>
+        <span class="n">mu_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mu</span><span class="p">)</span>
+        <span class="n">sigma_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sigma</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">mu_list</span><span class="p">,</span> <span class="n">sigma_list</span>
+
+<span class="k">def</span> <span class="nf">bayesian_change_point_2</span><span class="p">(</span><span class="n">data_input</span>
+                          <span class="p">,</span> <span class="n">sigma_measurement</span> <span class="o">=</span> <span class="mi">20</span> <span class="c"># error for single measurement; parameter to tune</span>
+                          <span class="p">,</span> <span class="n">TOL</span> <span class="o">=</span> <span class="mf">0.9999</span> <span class="c"># truncate tails of prob after this value</span>
+                          <span class="p">,</span> <span class="n">mu_prior</span> <span class="o">=</span> <span class="k">None</span>
+                          <span class="p">,</span> <span class="n">sigma_prior</span> <span class="o">=</span> <span class="k">None</span>
+                          <span class="p">,</span> <span class="n">min_length_prior</span> <span class="o">=</span> <span class="mi">5</span>
+                          <span class="p">,</span> <span class="n">gap_prior</span> <span class="o">=</span> <span class="mf">100.</span>
+                          <span class="p">,</span> <span class="n">SIGMA_LOW</span> <span class="o">=</span> <span class="mf">10.</span> <span class="c"># lowest Sigma of average level</span>
+                         <span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;method from Bayesian Online Changepoint Detection</span>
+<span class="sd">    this is a test version to remove all all-time storage to see if it speeds up the code&#39;&#39;&#39;</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">mu_prior</span><span class="p">:</span> <span class="c"># set mu&#39;s prior if not specified</span>
+        <span class="n">mu_prior</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">data_input</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">sigma_prior</span><span class="p">:</span>
+        <span class="n">sigma_prior</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">data_input</span><span class="p">)</span>
+    
+    <span class="n">STORAGE_MAX</span> <span class="o">=</span> <span class="mi">10000</span> <span class="c"># at a cost of mem, make a look up table for log H and log 1-H</span>
+    <span class="n">R_MIN</span> <span class="o">=</span> <span class="mi">10</span> <span class="c"># min of length of </span>
+    <span class="n">log_H_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="mi">1</span><span class="o">/</span><span class="p">(</span><span class="n">gap_prior</span><span class="o">*</span><span class="mi">100</span><span class="p">))]</span> <span class="o">*</span> <span class="n">min_length_prior</span> <span class="o">+</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="mi">1</span><span class="o">/</span><span class="n">gap_prior</span><span class="p">)]</span><span class="o">*</span><span class="p">(</span><span class="n">STORAGE_MAX</span><span class="o">-</span><span class="n">min_length_prior</span><span class="p">)</span> <span class="c"># hazard function, log(1-H)</span>
+    <span class="n">log_H_2_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="p">(</span><span class="n">gap_prior</span><span class="o">*</span><span class="mi">100</span><span class="p">))]</span> <span class="o">*</span> <span class="n">min_length_prior</span> <span class="o">+</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="n">gap_prior</span><span class="p">)]</span><span class="o">*</span><span class="p">(</span><span class="n">STORAGE_MAX</span><span class="o">-</span><span class="n">min_length_prior</span><span class="p">)</span> <span class="c"># log(H)</span>
+
+    <span class="n">mu_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_prior</span><span class="p">]</span> <span class="c"># refresh at each measurement, prior mean of mu</span>
+    <span class="n">sigma_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_prior</span><span class="p">]</span> <span class="c"># prior std of mu</span>
+    <span class="n">prob_r_list</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="c"># probability of each r</span>
+
+    <span class="n">prob_r_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">prob_r_list</span><span class="p">]</span> <span class="c"># history record</span>
+    <span class="n">mu_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_list</span><span class="p">]</span>
+    <span class="n">sigma_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_list</span><span class="p">]</span>
+
+    <span class="n">prob_r_list_mod</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">for</span> <span class="n">datum</span> <span class="ow">in</span> <span class="n">data_input</span><span class="p">:</span> <span class="c"># for each new observation</span>
+        <span class="n">predictive_prob</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># /pi_r</span>
+            <span class="o">-</span><span class="p">((</span><span class="n">datum</span><span class="o">-</span><span class="n">mu</span><span class="p">)</span><span class="o">/</span><span class="n">sigma_measurement</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">2.0</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="p">)</span> 
+            <span class="k">for</span> <span class="n">mu</span><span class="p">,</span> <span class="n">sigma</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">mu_list</span><span class="p">,</span> <span class="n">sigma_list</span><span class="p">)</span>
+        <span class="p">]</span>
+        <span class="n">growth_prob</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># prior * /pi_r * (1-H)</span>
+            <span class="n">p1</span> <span class="o">+</span> <span class="n">p2</span> <span class="o">+</span> <span class="n">log_H_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> 
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">p1</span><span class="p">,</span> <span class="n">p2</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">predictive_prob</span><span class="p">,</span> <span class="n">prob_r_list</span><span class="p">))</span>
+        <span class="p">]</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">change_prob</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">misc</span><span class="o">.</span><span class="n">logsumexp</span><span class="p">([</span> <span class="c"># change point prob</span>
+                <span class="n">p1</span> <span class="o">+</span> <span class="n">p2</span> <span class="o">+</span> <span class="n">log_H_2_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> 
+                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">p1</span><span class="p">,</span> <span class="n">p2</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">predictive_prob</span><span class="p">,</span> <span class="n">prob_r_list</span><span class="p">))</span>
+            <span class="p">])</span>
+        <span class="k">except</span><span class="p">:</span> <span class="c"># current implement allows len(prob_r_list) to only reach STORAGE_MAX</span>
+            <span class="k">raise</span><span class="p">(</span><span class="s">&#39;power not change for a long time, reached max 1-H list&#39;</span><span class="p">)</span>
+        <span class="n">prob_r_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">change_prob</span><span class="p">]</span> <span class="c"># posterior</span>
+        <span class="n">prob_r_list_update</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">growth_prob</span><span class="p">)</span>
+        <span class="n">evidence</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">misc</span><span class="o">.</span><span class="n">logsumexp</span><span class="p">(</span><span class="n">prob_r_list_update</span><span class="p">)</span>
+        <span class="n">prob_r_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">-</span><span class="n">evidence</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">prob_r_list_update</span><span class="p">]</span> <span class="c"># normalization</span>
+
+        <span class="n">mu_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_prior</span><span class="p">]</span>
+        <span class="n">sigma_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_prior</span><span class="p">]</span>
+
+        <span class="n">tmp</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># update mu and sigma of mu</span>
+            <span class="p">((</span><span class="n">mu</span><span class="o">*</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">datum</span><span class="o">*</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">),</span> 
+             <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">*</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">sigma_prior</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span> <span class="p">)</span> 
+            <span class="k">for</span> <span class="n">mu</span><span class="p">,</span><span class="n">sigma</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">mu_list</span><span class="p">,</span> <span class="n">sigma_list</span><span class="p">)</span>
+        <span class="p">]</span>
+
+        <span class="n">mu_list_update</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">t</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tmp</span><span class="p">])</span>
+        <span class="n">sigma_list_update</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">t</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tmp</span><span class="p">])</span>
+        <span class="n">sigma_list_update</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># set lower bound of sigma to be sigma_low</span>
+            <span class="n">t</span> <span class="k">if</span> <span class="n">t</span> <span class="o">&gt;</span> <span class="n">SIGMA_LOW</span> <span class="k">else</span> <span class="n">SIGMA_LOW</span> 
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">sigma_list_update</span>
+        <span class="p">]</span>
+
+        <span class="n">mu_list</span> <span class="o">=</span> <span class="n">mu_list_update</span>
+        <span class="n">sigma_list</span> <span class="o">=</span> <span class="n">sigma_list_update</span>
+        <span class="n">prob_r_list</span> <span class="o">=</span> <span class="n">prob_r_list_update</span>
+        <span class="k">if</span> <span class="n">TOL</span><span class="p">:</span> <span class="c"># truncation</span>
+            <span class="n">r_max</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span> 
+                <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">prob_r_list</span><span class="p">])</span> <span class="o">&gt;</span> <span class="n">TOL</span><span class="p">)</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">r_max</span> <span class="o">&lt;</span> <span class="n">R_MIN</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">prob_r_list</span><span class="p">)</span><span class="o">&gt;</span><span class="n">R_MIN</span><span class="p">:</span>
+                <span class="n">r_max</span> <span class="o">=</span> <span class="n">R_MIN</span>
+            <span class="n">mu_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">r_max</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span>
+            <span class="n">sigma_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">r_max</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span>
+            <span class="n">prob_r_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">prob_r_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">r_max</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span>
+<span class="c">#         mu_list_list.append(mu_list) # record</span>
+<span class="c">#         sigma_list_list.append(sigma_list)</span>
+<span class="c">#         prob_r_list_list.append(prob_r_list)</span>
+    <span class="n">mu_list_list</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="n">sigma_list_list</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="n">prob_r_list_list</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">mu_list_list</span><span class="p">,</span> <span class="n">sigma_list_list</span><span class="p">,</span> <span class="n">prob_r_list_list</span>
+
+<span class="k">def</span> <span class="nf">bayesian_change_point_3</span><span class="p">(</span><span class="n">data_input</span>
+                          <span class="p">,</span> <span class="n">sigma_measurement</span> <span class="o">=</span> <span class="mi">20</span> <span class="c"># error for single measurement; parameter to tune</span>
+                          <span class="p">,</span> <span class="n">TOL</span> <span class="o">=</span> <span class="mf">0.9999</span> <span class="c"># truncate tails of prob after this value</span>
+                          <span class="p">,</span> <span class="n">mu_prior</span> <span class="o">=</span> <span class="k">None</span>
+                          <span class="p">,</span> <span class="n">sigma_prior</span> <span class="o">=</span> <span class="k">None</span>
+                          <span class="p">,</span> <span class="n">min_length_prior</span> <span class="o">=</span> <span class="mi">5</span>
+                          <span class="p">,</span> <span class="n">gap_prior</span> <span class="o">=</span> <span class="mf">100.</span>
+                          <span class="p">,</span> <span class="n">SIGMA_LOW</span> <span class="o">=</span> <span class="mf">10.</span> <span class="c"># lowest Sigma of average level</span>
+                          <span class="p">,</span> <span class="n">prob_r_truncation</span> <span class="o">=</span> <span class="o">-</span><span class="mf">10.</span>
+                         <span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;method from Bayesian Online Changepoint Detection&#39;&#39;&#39;</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">mu_prior</span><span class="p">:</span> <span class="c"># set mu&#39;s prior if not specified</span>
+        <span class="n">mu_prior</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">data_input</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">sigma_prior</span><span class="p">:</span>
+        <span class="n">sigma_prior</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">data_input</span><span class="p">)</span>
+    
+    <span class="n">STORAGE_MAX</span> <span class="o">=</span> <span class="mi">10000</span> <span class="c"># at a cost of mem, make a look up table for log H and log 1-H</span>
+    <span class="n">R_MIN</span> <span class="o">=</span> <span class="mi">10</span> <span class="c"># min of length of </span>
+    <span class="n">log_H_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="mi">1</span><span class="o">/</span><span class="p">(</span><span class="n">gap_prior</span><span class="o">*</span><span class="mi">100</span><span class="p">))]</span> <span class="o">*</span> <span class="n">min_length_prior</span> <span class="o">+</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="mi">1</span><span class="o">/</span><span class="n">gap_prior</span><span class="p">)]</span><span class="o">*</span><span class="p">(</span><span class="n">STORAGE_MAX</span><span class="o">-</span><span class="n">min_length_prior</span><span class="p">)</span> <span class="c"># hazard function, log(1-H)</span>
+    <span class="n">log_H_2_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="p">(</span><span class="n">gap_prior</span><span class="o">*</span><span class="mi">100</span><span class="p">))]</span> <span class="o">*</span> <span class="n">min_length_prior</span> <span class="o">+</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="n">gap_prior</span><span class="p">)]</span><span class="o">*</span><span class="p">(</span><span class="n">STORAGE_MAX</span><span class="o">-</span><span class="n">min_length_prior</span><span class="p">)</span> <span class="c"># log(H)</span>
+
+    <span class="n">r_list</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">mu_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_prior</span><span class="p">]</span> <span class="c"># refresh at each measurement, prior mean of mu</span>
+    <span class="n">sigma_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_prior</span><span class="p">]</span> <span class="c"># prior std of mu</span>
+    <span class="n">prob_r_list</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="c"># probability of each r</span>
+
+    <span class="n">r_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">r_list</span><span class="p">]</span>
+    <span class="n">prob_r_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">prob_r_list</span><span class="p">]</span> <span class="c"># history record</span>
+    <span class="n">mu_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_list</span><span class="p">]</span>
+    <span class="n">sigma_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_list</span><span class="p">]</span>
+
+    <span class="n">prob_r_list_mod</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="n">counter</span> <span class="o">=</span> <span class="mi">0</span>
+    
+    <span class="k">for</span> <span class="n">datum</span> <span class="ow">in</span> <span class="n">data_input</span><span class="p">:</span> <span class="c"># for each new observation</span>
+        <span class="n">predictive_prob</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># /pi_r</span>
+            <span class="o">-</span><span class="p">((</span><span class="n">datum</span><span class="o">-</span><span class="n">mu</span><span class="p">)</span><span class="o">/</span><span class="n">sigma_measurement</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">2.0</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="p">)</span> 
+            <span class="k">for</span> <span class="n">mu</span><span class="p">,</span> <span class="n">sigma</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">mu_list</span><span class="p">,</span> <span class="n">sigma_list</span><span class="p">)</span>
+        <span class="p">]</span>
+        <span class="n">growth_prob</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># prior * /pi_r * (1-H)</span>
+            <span class="n">p1</span> <span class="o">+</span> <span class="n">p2</span> <span class="o">+</span> <span class="n">log_H_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> 
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">p1</span><span class="p">,</span> <span class="n">p2</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">predictive_prob</span><span class="p">,</span> <span class="n">prob_r_list</span><span class="p">))</span>
+        <span class="p">]</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">change_prob</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">misc</span><span class="o">.</span><span class="n">logsumexp</span><span class="p">([</span> <span class="c"># change point prob</span>
+                <span class="n">p1</span> <span class="o">+</span> <span class="n">p2</span> <span class="o">+</span> <span class="n">log_H_2_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> 
+                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">p1</span><span class="p">,</span> <span class="n">p2</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">predictive_prob</span><span class="p">,</span> <span class="n">prob_r_list</span><span class="p">))</span>
+            <span class="p">])</span>
+        <span class="k">except</span><span class="p">:</span> <span class="c"># current implement allows len(prob_r_list) to only reach STORAGE_MAX</span>
+            <span class="k">raise</span><span class="p">(</span><span class="s">&#39;power not change for a long time, reached max 1-H list&#39;</span><span class="p">)</span>
+        <span class="n">prob_r_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">change_prob</span><span class="p">]</span> <span class="c"># posterior</span>
+        <span class="n">prob_r_list_update</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">growth_prob</span><span class="p">)</span>
+        <span class="n">evidence</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">misc</span><span class="o">.</span><span class="n">logsumexp</span><span class="p">(</span><span class="n">prob_r_list_update</span><span class="p">)</span>
+        <span class="n">prob_r_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">-</span><span class="n">evidence</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">prob_r_list_update</span><span class="p">]</span> <span class="c"># normalization</span>
+
+        <span class="n">mu_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_prior</span><span class="p">]</span>
+        <span class="n">sigma_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_prior</span><span class="p">]</span>
+        <span class="n">r_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">r_list_update</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">t</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">r_list</span><span class="p">])</span>
+
+        <span class="n">tmp</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># update mu and sigma of mu</span>
+            <span class="p">((</span><span class="n">mu</span><span class="o">*</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">datum</span><span class="o">*</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">),</span> 
+             <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">*</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">sigma_prior</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span> <span class="p">)</span> 
+            <span class="k">for</span> <span class="n">mu</span><span class="p">,</span><span class="n">sigma</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">mu_list</span><span class="p">,</span> <span class="n">sigma_list</span><span class="p">)</span>
+        <span class="p">]</span>
+
+        <span class="n">mu_list_update</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">t</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tmp</span><span class="p">])</span>
+        <span class="n">sigma_list_update</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">t</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tmp</span><span class="p">])</span>
+        <span class="n">sigma_list_update</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># set lower bound of sigma to be sigma_low</span>
+            <span class="n">t</span> <span class="k">if</span> <span class="n">t</span> <span class="o">&gt;</span> <span class="n">SIGMA_LOW</span> <span class="k">else</span> <span class="n">SIGMA_LOW</span> 
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">sigma_list_update</span>
+        <span class="p">]</span>
+
+        <span class="n">r_list</span> <span class="o">=</span> <span class="n">r_list_update</span>
+        <span class="n">mu_list</span> <span class="o">=</span> <span class="n">mu_list_update</span>
+        <span class="n">sigma_list</span> <span class="o">=</span> <span class="n">sigma_list_update</span>
+        <span class="n">prob_r_list</span> <span class="o">=</span> <span class="n">prob_r_list_update</span>
+        <span class="k">if</span> <span class="n">TOL</span><span class="p">:</span> <span class="c"># truncation</span>
+            <span class="n">r_max</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span> 
+                <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">prob_r_list</span><span class="p">])</span> <span class="o">&gt;</span> <span class="n">TOL</span><span class="p">)</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">r_max</span> <span class="o">&lt;</span> <span class="n">R_MIN</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">prob_r_list</span><span class="p">)</span><span class="o">&gt;</span><span class="n">R_MIN</span><span class="p">:</span>
+                <span class="n">r_max</span> <span class="o">=</span> <span class="n">R_MIN</span>
+            <span class="n">mu_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">r_max</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span>
+            <span class="n">sigma_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">r_max</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span>
+            <span class="n">prob_r_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">prob_r_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">r_max</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span>
+            <span class="n">r_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">r_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">r_max</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span>
+            
+        <span class="c"># filter out the r(s) that has low prob</span>
+        <span class="n">low_r</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">prob</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">prob_r_list</span><span class="p">)</span> <span class="k">if</span> <span class="n">prob</span> <span class="o">&gt;</span> <span class="n">prob_r_truncation</span> <span class="ow">or</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">R_MIN</span><span class="p">]</span>
+        <span class="n">mu_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">low_r</span><span class="p">]</span>
+        <span class="n">sigma_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">low_r</span><span class="p">]</span>
+        <span class="n">prob_r_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">prob_r_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">low_r</span><span class="p">]</span>
+        <span class="n">r_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">r_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">low_r</span><span class="p">]</span>
+        
+        <span class="n">mu_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mu_list</span><span class="p">)</span> <span class="c"># record</span>
+        <span class="n">sigma_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sigma_list</span><span class="p">)</span>
+        <span class="n">prob_r_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">prob_r_list</span><span class="p">)</span>
+        <span class="n">r_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">r_list</span><span class="p">)</span>
+        
+        <span class="n">counter</span><span class="o">+=</span><span class="mi">1</span>
+    <span class="n">mu_list_list</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="n">sigma_list_list</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="n">prob_r_list_list</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="n">r_list_list</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">mu_list_list</span><span class="p">,</span> <span class="n">sigma_list_list</span><span class="p">,</span> <span class="n">prob_r_list_list</span><span class="p">,</span> <span class="n">r_list_list</span>
+
+
+<div class="viewcode-block" id="bayesian_change_point_4"><a class="viewcode-back" href="../../../RepeatedMedianFilter/code.html#disaggregation.bayesian_cp_detect.cp_detect.bayesian_change_point_4">[docs]</a><span class="k">def</span> <span class="nf">bayesian_change_point_4</span><span class="p">(</span><span class="n">data_input</span>
+                          <span class="p">,</span> <span class="n">sigma_measurement</span> <span class="o">=</span> <span class="mi">2</span> 
+                          <span class="p">,</span> <span class="n">TOL</span> <span class="o">=</span> <span class="mf">0.9999</span> 
+                          <span class="p">,</span> <span class="n">mu_prior</span> <span class="o">=</span> <span class="k">None</span>
+                          <span class="p">,</span> <span class="n">sigma_prior</span> <span class="o">=</span> <span class="k">None</span>
+                          <span class="p">,</span> <span class="n">min_length_prior</span> <span class="o">=</span> <span class="mi">3</span>
+                          <span class="p">,</span> <span class="n">gap_prior</span> <span class="o">=</span> <span class="mf">10.</span>
+                          <span class="p">,</span> <span class="n">SIGMA_LOW</span> <span class="o">=</span> <span class="mf">10.</span>   
+                          <span class="p">,</span> <span class="n">prob_r_truncation</span> <span class="o">=</span> <span class="o">-</span><span class="mf">10.</span>
+                          <span class="p">,</span> <span class="n">r_blur</span> <span class="o">=</span> <span class="mi">100</span>
+                         <span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;method from Bayesian Online Changepoint Detection</span>
+
+<span class="sd">        :param data_input: 1 dimension list of number for which changepoint need to be detected.</span>
+<span class="sd">        :type data_input: list.</span>
+<span class="sd">        :param sigma_measurement: error for single measurement; parameter to tune.</span>
+<span class="sd">        :type  sigma_neasurement: int.</span>
+<span class="sd">        :param TOL:  truncate tails of prob after this value.</span>
+<span class="sd">        :type TOL: float.</span>
+<span class="sd">        :param mu_prior: the prior mean for data_input, default set to None.</span>
+<span class="sd">        :type mu_prior: float.</span>
+<span class="sd">        :param sigma_prior: the prior standard deviation for data_input, default set to None.</span>
+<span class="sd">        :type sigma_prior: float.</span>
+<span class="sd">        :param min_length_prior: the prior of minimum duration that changepoint can not appear twice.</span>
+<span class="sd">        :type min_length_prior: int.</span>
+<span class="sd">        :param gap_prior: </span>
+<span class="sd">        :type gap_prior: int.</span>
+<span class="sd">        :param SIGMA_LOW: lowest Sigma of average level.</span>
+<span class="sd">        :type SIGMA_LOW: float</span>
+<span class="sd">        :param prob_r_truncation:</span>
+<span class="sd">        :type prob_r_truncation: float.</span>
+<span class="sd">        :param r_blur:</span>
+<span class="sd">        :type r_blur: int</span>
+<span class="sd">        :returns: a list of list  -- the list of changepoints probablities for each time step</span>
+<span class="sd">        </span>
+<span class="sd">        Suppose you want to get all the changepoints of datalist</span>
+<span class="sd">        </span>
+<span class="sd">        &gt;&gt;&gt; mu_list_list, sigma_list_list, prob_r_list_list, r_list_list = cp_detect.bayesian_change_point_4(data_list, r_blur=30)</span>
+<span class="sd">        changepoint, changepoint_p = cp_detect.get_change_point(prob_r_list_list)</span>
+<span class="sd">    </span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="sd">&#39;&#39;&#39; set mu&#39;s prior if not specified &#39;&#39;&#39;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">mu_prior</span><span class="p">:</span> 
+        <span class="n">mu_prior</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">data_input</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">sigma_prior</span><span class="p">:</span>
+        <span class="n">sigma_prior</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">data_input</span><span class="p">)</span>
+    
+    <span class="sd">&#39;&#39;&#39; use a lookup table to store the hazard function &#39;&#39;&#39;</span>
+    
+    <span class="n">STORAGE_MAX</span> <span class="o">=</span> <span class="mi">10000</span> <span class="c"># at a cost of mem, make a look up table for log H and log 1-H</span>
+    <span class="n">R_MIN</span> <span class="o">=</span> <span class="mi">10</span> <span class="c"># min of length of </span>
+    <span class="n">log_H_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="mi">1</span><span class="o">/</span><span class="p">(</span><span class="n">gap_prior</span><span class="o">*</span><span class="mi">100</span><span class="p">))]</span> <span class="o">*</span> <span class="n">min_length_prior</span> <span class="o">+</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="mi">1</span><span class="o">/</span><span class="n">gap_prior</span><span class="p">)]</span><span class="o">*</span><span class="p">(</span><span class="n">STORAGE_MAX</span><span class="o">-</span><span class="n">min_length_prior</span><span class="p">)</span> <span class="c"># hazard function, log(1-H)</span>
+    <span class="n">log_H_2_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="p">(</span><span class="n">gap_prior</span><span class="o">*</span><span class="mi">100</span><span class="p">))]</span> <span class="o">*</span> <span class="n">min_length_prior</span> <span class="o">+</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="n">gap_prior</span><span class="p">)]</span><span class="o">*</span><span class="p">(</span><span class="n">STORAGE_MAX</span><span class="o">-</span><span class="n">min_length_prior</span><span class="p">)</span> <span class="c"># log(H)</span>
+
+    
+    <span class="c"># Initialize the data struction for the first point </span>
+    <span class="n">r_list</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="c"># the possible value for r_0 is only 0, since we assume that the first point is always a change point</span>
+    <span class="n">mu_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_prior</span><span class="p">]</span> <span class="c"># refresh at each measurement, prior mean of mu</span>
+    <span class="n">sigma_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_prior</span><span class="p">]</span> <span class="c"># prior std of mu</span>
+    <span class="n">prob_r_list</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="c"># probability of each r</span>
+
+    
+    <span class="c"># the data struction holds all information </span>
+    <span class="n">r_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">r_list</span><span class="p">]</span> 
+    <span class="n">prob_r_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">prob_r_list</span><span class="p">]</span> <span class="c"># history record</span>
+    <span class="n">mu_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_list</span><span class="p">]</span>
+    <span class="n">sigma_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_list</span><span class="p">]</span>
+
+    <span class="n">prob_r_list_mod</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="n">counter</span> <span class="o">=</span> <span class="mi">0</span>
+
+    
+    <span class="sd">&#39;&#39;&#39; read in each data point , the main loop &#39;&#39;&#39;</span>
+
+    <span class="k">for</span> <span class="n">datum</span> <span class="ow">in</span> <span class="n">data_input</span><span class="p">:</span> 
+
+        <span class="sd">&#39;&#39;&#39; calculate predictive probablity</span>
+
+<span class="sd">        this one is actually a random variable since it is </span>
+<span class="sd">        conditioned on the various possible values of r at this time step.  </span>
+<span class="sd">        so the predictive_prob is a list has the same length as the r_list at this time step.</span>
+
+<span class="sd">        Each possible value of r will give us different mu and sigma, here we have the assumption of </span>
+<span class="sd">        the underlying data satisfies log normal distribution and the various </span>
+<span class="sd">        mu, sigma depends on the previous changepoints...) </span>
+
+<span class="sd">        this is exactly the step 3 in paper: Bayesian Online Changepoint Detection , Algorithm 1</span>
+
+<span class="sd">        &#39;&#39;&#39;</span>
+        
+        <span class="n">predictive_prob</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># /pi_r</span>
+            <span class="o">-</span><span class="p">((</span><span class="n">datum</span><span class="o">-</span><span class="n">mu</span><span class="p">)</span><span class="o">/</span><span class="n">sigma_measurement</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="mf">2.0</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="p">)</span> 
+            <span class="k">for</span> <span class="n">mu</span><span class="p">,</span> <span class="n">sigma</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">mu_list</span><span class="p">,</span> <span class="n">sigma_list</span><span class="p">)</span>
+        <span class="p">]</span>
+        
+        <span class="sd">&#39;&#39;&#39;compute the Growth probability, using the lookup table for the hazard function of changepoint </span>
+
+<span class="sd">           this is exactly the step 4 in paper: Bayesian Online Changepoint Detection , Algorithm 1</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        
+        <span class="n">growth_prob</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># prior * /pi_r * (1-H)</span>
+            <span class="n">p1</span> <span class="o">+</span> <span class="n">p2</span> <span class="o">+</span> <span class="n">log_H_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> 
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">p1</span><span class="p">,</span> <span class="n">p2</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">predictive_prob</span><span class="p">,</span> <span class="n">prob_r_list</span><span class="p">))</span>
+        <span class="p">]</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="sd">&#39;&#39;&#39;compute the change probability, using the lookup table for the hazard function of changepoint</span>
+
+<span class="sd">                this is exactly the step 5 in paper: Bayesian Online Changepoint Detection , Algorithm 1</span>
+<span class="sd">            &#39;&#39;&#39;</span>
+            <span class="n">change_prob</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">misc</span><span class="o">.</span><span class="n">logsumexp</span><span class="p">([</span> <span class="c"># change point prob</span>
+                <span class="n">p1</span> <span class="o">+</span> <span class="n">p2</span> <span class="o">+</span> <span class="n">log_H_2_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> 
+                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">p1</span><span class="p">,</span> <span class="n">p2</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">predictive_prob</span><span class="p">,</span> <span class="n">prob_r_list</span><span class="p">))</span>
+            <span class="p">])</span>
+        <span class="k">except</span><span class="p">:</span> 
+            <span class="sd">&#39;&#39;&#39; current implement allows len(prob_r_list) to only reach STORAGE_MAX, the</span>
+<span class="sd">                exception is for possible indexing reach STORAGE_MAX error</span>
+<span class="sd">            &#39;&#39;&#39;</span>
+
+            <span class="k">raise</span><span class="p">(</span><span class="s">&#39;power not change for a long time, reached max 1-H list&#39;</span><span class="p">)</span>
+
+
+        <span class="n">prob_r_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">change_prob</span><span class="p">]</span> <span class="c"># posterior</span>
+        <span class="n">prob_r_list_update</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">growth_prob</span><span class="p">)</span>
+        
+        <span class="sd">&#39;&#39;&#39;this is exactly the step 6 in paper: Bayesian Online Changepoint Detection , Algorithm 1 &#39;&#39;&#39;</span>
+        <span class="n">evidence</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">misc</span><span class="o">.</span><span class="n">logsumexp</span><span class="p">(</span><span class="n">prob_r_list_update</span><span class="p">)</span>
+        
+        <span class="sd">&#39;&#39;&#39;this is exactly the step 7 in paper: Bayesian Online Changepoint Detection , Algorithm 1 &#39;&#39;&#39;</span>
+        <span class="n">prob_r_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">-</span><span class="n">evidence</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">prob_r_list_update</span><span class="p">]</span> <span class="c"># normalization</span>
+
+        
+
+        <span class="sd">&#39;&#39;&#39; step 8 in paper: Bayesian Online Changepoint Detection , Algorithm 1  &#39;&#39;&#39;</span>
+        <span class="n">mu_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_prior</span><span class="p">]</span>
+        <span class="n">sigma_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_prior</span><span class="p">]</span>
+        <span class="n">r_list_update</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">r_list_update</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">t</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">r_list</span><span class="p">])</span>
+
+        
+
+        <span class="n">tmp</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># update mu and sigma of mu</span>
+            <span class="p">((</span><span class="n">mu</span><span class="o">*</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">datum</span><span class="o">*</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">),</span> 
+             <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">*</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="p">(</span><span class="n">sigma_measurement</span><span class="o">**</span><span class="mi">2</span><span class="o">+</span><span class="n">sigma_prior</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span> <span class="p">)</span> 
+            <span class="k">for</span> <span class="n">mu</span><span class="p">,</span><span class="n">sigma</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">mu_list</span><span class="p">,</span> <span class="n">sigma_list</span><span class="p">)</span>
+        <span class="p">]</span>
+
+        <span class="n">mu_list_update</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">t</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tmp</span><span class="p">])</span>
+        <span class="n">sigma_list_update</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">t</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tmp</span><span class="p">])</span>
+        <span class="n">sigma_list_update</span> <span class="o">=</span> <span class="p">[</span> <span class="c"># set lower bound of sigma to be sigma_low</span>
+            <span class="n">t</span> <span class="k">if</span> <span class="n">t</span> <span class="o">&gt;</span> <span class="n">SIGMA_LOW</span> <span class="k">else</span> <span class="n">SIGMA_LOW</span> 
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">sigma_list_update</span>
+        <span class="p">]</span>
+
+        <span class="c"># update the changepoint probability list, and the corresponding mean, std list for the segments.</span>
+        <span class="n">r_list</span> <span class="o">=</span> <span class="n">r_list_update</span>
+        <span class="n">mu_list</span> <span class="o">=</span> <span class="n">mu_list_update</span>
+        <span class="n">sigma_list</span> <span class="o">=</span> <span class="n">sigma_list_update</span>
+        <span class="n">prob_r_list</span> <span class="o">=</span> <span class="n">prob_r_list_update</span>
+        
+        <span class="c"># to prevail too long r_list, truncate the low probability tails</span>
+        <span class="c"># this is not showed in the algorithm but was suggested in the description below Algorithm 1.</span>
+        <span class="c"># this is an optimization needed</span>
+
+        <span class="k">if</span> <span class="n">TOL</span><span class="p">:</span> <span class="c"># truncation</span>
+            <span class="n">r_max</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span> 
+                <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span>
+                    <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cumsum</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">prob_r_list</span><span class="p">])</span> <span class="o">&gt;</span> <span class="n">TOL</span><span class="p">)</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">r_max</span> <span class="o">&lt;</span> <span class="n">R_MIN</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">prob_r_list</span><span class="p">)</span><span class="o">&gt;</span><span class="n">R_MIN</span><span class="p">:</span>
+                <span class="n">r_max</span> <span class="o">=</span> <span class="n">R_MIN</span>
+            <span class="n">mu_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">r_max</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span>
+            <span class="n">sigma_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">r_max</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span>
+            <span class="n">prob_r_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">prob_r_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">r_max</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span>
+            <span class="n">r_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">r_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">r_max</span><span class="o">+</span><span class="mi">1</span><span class="p">)]</span>
+            
+        <span class="c"># filter out the r(s) that has low prob</span>
+        <span class="c"># filter r(s) that larger than 100 but not too close to the max(r)</span>
+        <span class="n">r_max</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">r_list</span><span class="p">)</span>
+        <span class="n">low_r</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">prob</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">prob_r_list</span><span class="p">)</span> <span class="k">if</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">R_MIN</span> <span class="ow">or</span> <span class="p">(</span><span class="n">i</span> <span class="o">&lt;</span> <span class="n">r_blur</span> <span class="ow">and</span> <span class="n">prob</span> <span class="o">&gt;</span> <span class="n">prob_r_truncation</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">i</span> <span class="o">&gt;</span> <span class="n">r_max</span><span class="o">-</span><span class="mi">10</span><span class="p">)]</span>
+        <span class="n">mu_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">mu_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">low_r</span><span class="p">]</span>
+        <span class="n">sigma_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">sigma_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">low_r</span><span class="p">]</span>
+        <span class="n">prob_r_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">prob_r_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">low_r</span><span class="p">]</span>
+        <span class="n">r_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">r_list</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">low_r</span><span class="p">]</span>
+        
+        <span class="c"># save the record</span>
+        <span class="n">mu_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mu_list</span><span class="p">)</span> 
+        <span class="n">sigma_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sigma_list</span><span class="p">)</span>
+        <span class="n">prob_r_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">prob_r_list</span><span class="p">)</span>
+        <span class="n">r_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">r_list</span><span class="p">)</span>
+        <span class="n">counter</span><span class="o">+=</span><span class="mi">1</span>
+        
+    <span class="n">mu_list_list</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="n">sigma_list_list</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="n">prob_r_list_list</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    <span class="n">r_list_list</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+    </div>
+    <span class="k">return</span> <span class="n">mu_list_list</span><span class="p">,</span> <span class="n">sigma_list_list</span><span class="p">,</span> <span class="n">prob_r_list_list</span><span class="p">,</span> <span class="n">r_list_list</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper"><div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2018, Simo Wu.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.7.0b2</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.10</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

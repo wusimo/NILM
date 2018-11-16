@@ -1,0 +1,146 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" lang="python 2.7.3">
+  <head>
+        <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Documentation for the Steady State Detection Algorithm &#8212; disaggregation algorithms 0.0.1 documentation</title>
+    <link rel="stylesheet" href="../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <script type="text/javascript" src="../_static/documentation_options.js"></script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="prev" title="Documentation for the Disaggregation Algorithm" href="../disaggregation/code.html" />
+   
+  <link rel="stylesheet" href="../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="documentation-for-the-steady-state-detection-algorithm">
+<h1>Documentation for the Steady State Detection Algorithm<a class="headerlink" href="#documentation-for-the-steady-state-detection-algorithm" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="steady-state-detection-algorithm">
+<h2>Steady State Detection Algorithm<a class="headerlink" href="#steady-state-detection-algorithm" title="Permalink to this headline">¶</a></h2>
+<p>The first step is pass the whole time series to a two step filtering procedure with two different time windows. This includes a median filter with small time window(preset at 5) to filter out the abnormal or potential outlier points and after that use a larger time window(preset at 15) to apply the repeated median filter to clean the data but at same time preserve the trends.</p>
+<p>The second step of this algorithm is using BCP(Bayesian changepoint) to detect the changepoints of the given time series cleaned after step 1. And the segments between each of the consecutive changepoints will be considered as equilibrium states. We take the average value in each segments as the steady state value.</p>
+</div>
+<div class="section" id="module-RepeatedMedianFilter.RMFilter">
+<span id="explanation-of-the-repeated-median-filter-algorithm"></span><h2>Explanation of the Repeated Median Filter Algorithm<a class="headerlink" href="#module-RepeatedMedianFilter.RMFilter" title="Permalink to this headline">¶</a></h2>
+</div>
+<div class="section" id="module-disaggregation.bayesian_cp_detect.cp_detect">
+<span id="explanation-of-the-changepoint-algorithm"></span><h2>Explanation of the Changepoint Algorithm<a class="headerlink" href="#module-disaggregation.bayesian_cp_detect.cp_detect" title="Permalink to this headline">¶</a></h2>
+<dl class="function">
+<dt id="disaggregation.bayesian_cp_detect.cp_detect.bayesian_change_point_4">
+<code class="descclassname">disaggregation.bayesian_cp_detect.cp_detect.</code><code class="descname">bayesian_change_point_4</code><span class="sig-paren">(</span><em>data_input</em>, <em>sigma_measurement=2</em>, <em>TOL=0.9999</em>, <em>mu_prior=None</em>, <em>sigma_prior=None</em>, <em>min_length_prior=3</em>, <em>gap_prior=10.0</em>, <em>SIGMA_LOW=10.0</em>, <em>prob_r_truncation=-10.0</em>, <em>r_blur=100</em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/disaggregation/bayesian_cp_detect/cp_detect.html#bayesian_change_point_4"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#disaggregation.bayesian_cp_detect.cp_detect.bayesian_change_point_4" title="Permalink to this definition">¶</a></dt>
+<dd><p>method from Bayesian Online Changepoint Detection</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>data_input</strong> (<em>list.</em>) -- 1 dimension list of number for which changepoint need to be detected.</li>
+<li><strong>sigma_measurement</strong> -- error for single measurement; parameter to tune.</li>
+<li><strong>TOL</strong> (<em>float.</em>) -- truncate tails of prob after this value.</li>
+<li><strong>mu_prior</strong> (<em>float.</em>) -- the prior mean for data_input, default set to None.</li>
+<li><strong>sigma_prior</strong> (<em>float.</em>) -- the prior standard deviation for data_input, default set to None.</li>
+<li><strong>min_length_prior</strong> (<em>int.</em>) -- the prior of minimum duration that changepoint can not appear twice.</li>
+<li><strong>gap_prior</strong> (<em>int.</em>) -- </li>
+<li><strong>SIGMA_LOW</strong> (<em>float</em>) -- lowest Sigma of average level.</li>
+<li><strong>prob_r_truncation</strong> (<em>float.</em>) -- </li>
+<li><strong>r_blur</strong> (<em>int</em>) -- </li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last">a list of list  -- the list of changepoints probablities for each time step</p>
+</td>
+</tr>
+</tbody>
+</table>
+<p>Suppose you want to get all the changepoints of datalist</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">mu_list_list</span><span class="p">,</span> <span class="n">sigma_list_list</span><span class="p">,</span> <span class="n">prob_r_list_list</span><span class="p">,</span> <span class="n">r_list_list</span> <span class="o">=</span> <span class="n">cp_detect</span><span class="o">.</span><span class="n">bayesian_change_point_4</span><span class="p">(</span><span class="n">data_list</span><span class="p">,</span> <span class="n">r_blur</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
+<span class="go">changepoint, changepoint_p = cp_detect.get_change_point(prob_r_list_list)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<p>Explanation of the ChangepointAlgorithm will be found in the Disaggregation documentation</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="../index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Documentation for the Steady State Detection Algorithm</a><ul>
+<li><a class="reference internal" href="#steady-state-detection-algorithm">Steady State Detection Algorithm</a></li>
+<li><a class="reference internal" href="#module-RepeatedMedianFilter.RMFilter">Explanation of the Repeated Median Filter Algorithm</a></li>
+<li><a class="reference internal" href="#module-disaggregation.bayesian_cp_detect.cp_detect">Explanation of the Changepoint Algorithm</a></li>
+</ul>
+</li>
+</ul>
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="../disaggregation/code.html" title="previous chapter">Documentation for the Disaggregation Algorithm</a></li>
+  </ul></li>
+</ul>
+</div>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="../_sources/RepeatedMedianFilter/code.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2018, Simo Wu.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.7.0b2</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.10</a>
+      
+      |
+      <a href="../_sources/RepeatedMedianFilter/code.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

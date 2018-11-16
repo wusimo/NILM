@@ -1,0 +1,368 @@
+"""
+.. module::Changepoint_1
+   :languange: Python 2.7.3
+
+.. moduleauthor: Equota<szw184@psu.edu>
+"""
+
+def bayesian_change_point_4(data_input
+                          , sigma_measurement = 2 
+                          , TOL = 0.9999 
+                          , mu_prior = None
+                          , sigma_prior = None
+                          , min_length_prior = 3
+                          , gap_prior = 10.
+                          , SIGMA_LOW = 10.   
+                          , prob_r_truncation = -10.
+                          , r_blur = 100
+                         ):
+    '''method from Bayesian Online Changepoint Detection
+
+        Parameters
+        ----------
+        data_input: 1 dimension list of number for which changepoint need to be detected
+        
+        sigma_measurement: error for single measurement; parameter to tune
+        
+        TOL:  truncate tails of prob after this value
+        
+        mu_prior: the prior mean for data_input, default set to None
+        
+        sigma_prior: the prior standard deviation for data_input, default set to None
+        
+        min_length_prior: the prior of minimum duration that changepoint can not appear twice
+        
+        gap_prior:
+        
+        SIGMA_LOW: lowest Sigma of average level
+        
+        prob_r_truncation:
+
+        r_blur:
+        
+        Returns:
+        --------
+
+        the list of changepoints probablities for each time step
+
+        a list of list 
+
+    '''
+
+    ''' set mu's prior if not specified '''
+    if not mu_prior: 
+        mu_prior = np.mean(data_input)
+    if not sigma_prior:
+        sigma_prior = np.std(data_input)
+    
+    ''' use a lookup table to store the hazard function '''
+    
+    STORAGE_MAX = 10000 # at a cost of mem, make a look up table for log H and log 1-H
+    R_MIN = 10 # min of length of 
+    log_H_list = [np.log(1-1/(gap_prior*100))] * min_length_prior + [np.log(1-1/gap_prior)]*(STORAGE_MAX-min_length_prior) # hazard function, log(1-H)
+    log_H_2_list = [np.log(1/(gap_prior*100))] * min_length_prior + [np.log(1/gap_prior)]*(STORAGE_MAX-min_length_prior) # log(H)
+
+    
+    # Initialize the data struction for the first point 
+    r_list = [0] # the possible value for r_0 is only 0, since we assume that the first point is always a change point
+    mu_list = [mu_prior] # refresh at each measurement, prior mean of mu
+    sigma_list = [sigma_prior] # prior std of mu
+    prob_r_list = [0] # probability of each r
+
+    
+    # the data struction holds all information 
+    r_list_list = [r_list] 
+    prob_r_list_list = [prob_r_list] # history record
+    mu_list_list = [mu_list]
+    sigma_list_list = [sigma_list]
+
+    prob_r_list_mod = [0]
+
+    counter = 0
+
+    
+    ''' read in each data point , the main loop '''
+
+    for datum in data_input: 
+
+        ''' calculate predictive probablity
+
+        this one is actually a random variable since it is 
+        conditioned on the various possible values of r at this time step.  
+        so the predictive_prob is a list has the same length as the r_list at this time step.
+
+        Each possible value of r will give us different mu and sigma, here we have the assumption of 
+        the underlying data satisfies log normal distribution and the various 
+        mu, sigma depends on the previous changepoints...) 
+
+        this is exactly the step 3 in paper: Bayesian Online Changepoint Detection , Algorithm 1
+
+        '''
+        
+        predictive_prob = [ # /pi_r
+            -((datum-mu)/sigma_measurement)**2/2.0-np.log(sigma_measurement) 
+            for mu, sigma in zip(mu_list, sigma_list)
+        ]
+        
+        '''compute the Growth probability, using the lookup table for the hazard function of changepoint 
+
+           this is exactly the step 4 in paper: Bayesian Online Changepoint Detection , Algorithm 1
+        '''
+        
+        growth_prob = [ # prior * /pi_r * (1-H)
+            p1 + p2 + log_H_list[i] 
+            for i, (p1, p2) in enumerate(zip(predictive_prob, prob_r_list))
+        ]
+
+        try:
+            '''compute the change probability, using the lookup table for the hazard function of changepoint
+
+                this is exactly the step 5 in paper: Bayesian Online Changepoint Detection , Algorithm 1
+            '''
+            change_prob = sp.misc.logsumexp([ # change point prob
+                p1 + p2 + log_H_2_list[i] 
+                for i, (p1, p2) in enumerate(zip(predictive_prob, prob_r_list))
+            ])
+        except: 
+            ''' current implement allows len(prob_r_list) to only reach STORAGE_MAX, the
+                exception is for possible indexing reach STORAGE_MAX error
+            '''
+
+            raise('power not change for a long time, reached max 1-H list')
+
+
+        prob_r_list_update = [change_prob] # posterior
+        prob_r_list_update.extend(growth_prob)
+        
+        '''this is exactly the step 6 in paper: Bayesian Online Changepoint Detection , Algorithm 1 '''
+        evidence = sp.misc.logsumexp(prob_r_list_update)
+        
+        '''this is exactly the step 7 in paper: Bayesian Online Changepoint Detection , Algorithm 1 '''
+        prob_r_list_update = [t-evidence for t in prob_r_list_update] # normalization
+
+        
+
+        ''' step 8 in paper: Bayesian Online Changepoint Detection , Algorithm 1  '''
+        mu_list_update = [mu_prior]
+        sigma_list_update = [sigma_prior]
+        r_list_update = [0]
+        r_list_update.extend([t+1 for t in r_list])
+
+        
+
+        tmp = [ # update mu and sigma of mu
+            ((mu*sigma_measurement**2+datum*sigma**2)/(sigma_measurement**2+sigma**2), 
+             np.sqrt(sigma_measurement**2*sigma**2/(sigma_measurement**2+sigma_prior**2)) ) 
+            for mu,sigma in zip(mu_list, sigma_list)
+        ]
+
+        mu_list_update.extend([t[0] for t in tmp])
+        sigma_list_update.extend([t[1] for t in tmp])
+        sigma_list_update = [ # set lower bound of sigma to be sigma_low
+            t if t > SIGMA_LOW else SIGMA_LOW 
+            for t in sigma_list_update
+        ]
+
+        # update the changepoint probability list, and the corresponding mean, std list for the segments.
+        r_list = r_list_update
+        mu_list = mu_list_update
+        sigma_list = sigma_list_update
+        prob_r_list = prob_r_list_update
+        
+        # to prevail too long r_list, truncate the low probability tails
+        # this is not showed in the algorithm but was suggested in the description below Algorithm 1.
+        # this is an optimization needed
+
+        if TOL: # truncation
+            r_max = int( 
+                np.min(
+                    np.where(np.cumsum([np.exp(t) for t in prob_r_list]) > TOL)
+                )
+            )
+            if r_max < R_MIN and len(prob_r_list)>R_MIN:
+                r_max = R_MIN
+            mu_list = [mu_list[i] for i in range(r_max+1)]
+            sigma_list = [sigma_list[i] for i in range(r_max+1)]
+            prob_r_list = [prob_r_list[i] for i in range(r_max+1)]
+            r_list = [r_list[i] for i in range(r_max+1)]
+            
+        # filter out the r(s) that has low prob
+        # filter r(s) that larger than 100 but not too close to the max(r)
+        r_max = np.max(r_list)
+        low_r = [i for i, prob in enumerate(prob_r_list) if i<R_MIN or (i < r_blur and prob > prob_r_truncation) or (i > r_max-10)]
+        mu_list = [mu_list[i] for i in low_r]
+        sigma_list = [sigma_list[i] for i in low_r]
+        prob_r_list = [prob_r_list[i] for i in low_r]
+        r_list = [r_list[i] for i in low_r]
+        
+        # save the record
+        mu_list_list.append(mu_list) 
+        sigma_list_list.append(sigma_list)
+        prob_r_list_list.append(prob_r_list)
+        r_list_list.append(r_list)
+        counter+=1
+        
+    mu_list_list.pop()
+    sigma_list_list.pop()
+    prob_r_list_list.pop()
+    r_list_list.pop()
+    
+    return mu_list_list, sigma_list_list, prob_r_list_list, r_list_list
+
+
+def set_disaggregation_option(time_resolution = 15., 
+                              change_shape = [],
+                              cp_interval = 900, # in unit of seconds
+                              process_noise = 3.3,
+                              measure_noise = 28.3,
+                              init_pos_std = 8.16
+                             ):
+    """
+    setter for a dict that support other functions for disaggregation (similar to class member variables); 
+    
+    Args:
+    
+    <key, value> description:
+
+        time_resolution (float): time resolution in units of seconds, default 15.;
+    
+        change_shape  (list of list) : Each list is change of power comparing
+            to the last change point; position zero is the first point after "change"
+    
+        cp_interval (int): expected interval of change point
+        
+        process_noise (float): at each step the variance of mean will increase by 
+            process_noise^2
+        
+        measurement_noise (float): measurement noise
+        
+        init_pos_std (float) :either float or list of float. A single float will be 
+            repeated for n_change_shape times. This variable sets up the initial
+            std of the location of each shape.
+    
+    automatic generated key-value pairs:
+        
+        n_change_shape: the number of shapes
+        
+        H: np.log(1-1./(cp_interval/time_resolution)), the hazard function used in calculation
+    
+    
+    >>> set_disaggregation_option()
+    option = {
+        'time_resolution': 15., 
+        'change_shape': [], 
+        'n_change_shape': 0,
+        'cp_interval': 900, 
+        'H': np.log(1-1./(cp_interval/time_resolution)),
+        'process_noise': 3.3, 
+        'measure_noise': 28.3,
+        'init_pos_std': 8.16,
+        'unhappy_count_thre': 3, 
+        'len_protected': 5,
+        'delta_shape': [float(50/3) for _ in range(len(change_shape))]
+    }
+    """
+    
+    option = {
+        'time_resolution': time_resolution, 
+        'change_shape': change_shape, 
+        'n_change_shape': len(change_shape),
+        'cp_interval': cp_interval, 
+        'H': np.log(1-1./(cp_interval/time_resolution)),
+        'process_noise': process_noise, 
+        'measure_noise': measure_noise,
+        'init_pos_std': init_pos_std,
+        'unhappy_count_thre': 3, 
+        'len_protected': 5,
+        'delta_shape': [float(50/3) for _ in range(len(change_shape))]
+    }
+    
+    return option
+
+
+def disaggregate(data, opt):
+
+    """
+    This is the main changepoint function 
+
+
+    """
+    # load options from opt
+    unhappy_count_thre = opt['unhappy_count_thre']
+    len_protected = opt['len_protected']
+    
+    # status
+    current_data_pos = 0
+    last_datum = 0
+
+    # set prior
+    log_prob, delta_mean, delta_var, time_since_last_cp = set_prior_7(opt)
+    
+    last_cp = 0  # by definition, zero is the start of the first chunck of data.
+    cp_list = [last_cp]
+
+    unhappy_count = 0
+    
+    while (current_data_pos<len(data)):
+        datum = data[current_data_pos]
+        log_prob, delta_mean, delta_var, time_since_last_cp = update_with_datum_7(
+                datum
+                , log_prob
+                , delta_mean
+                , delta_var
+                , time_since_last_cp
+                , last_datum
+                , opt)
+
+        leader_prob = np.sum( [np.exp(t[-1]) for t in log_prob] )
+        leader_shape = np.argmax( [t[-1] for t in log_prob] )
+
+        flag_happy = is_happy(log_prob)
+        
+        if flag_happy:
+            
+            unhappy_count = 0 # reset counter, only consecutive fail counts
+
+            # trim data, only retain data that is within protected region or the last data.
+            log_prob = trim_5(log_prob, time_since_last_cp, time_thre = len_protected)
+            delta_mean = trim_5(delta_mean, time_since_last_cp, time_thre = len_protected)
+            delta_var = trim_5(delta_var, time_since_last_cp, time_thre = len_protected)
+            time_since_last_cp = trim_5(time_since_last_cp, time_since_last_cp, time_thre = len_protected)
+            
+        else:  # "unhappy", basically saying the algorithm is confused whether there is a new change point
+            unhappy_count += 1
+
+            if (unhappy_count == unhappy_count_thre):
+                last_cp = current_data_pos - unhappy_count_thre
+                cp_list.append(last_cp)  # declare a new change point
+                
+                # now reset everything
+                unhappy_count = 0
+                log_prob, delta_mean, delta_var, time_since_last_cp = set_prior_7(opt)
+                last_datum = np.mean( data[(last_cp-3):last_cp] )  # use the last three to increase accuracy
+                for current_data_pos_t in range(last_cp, last_cp + len_protected):
+                    log_prob, delta_mean, delta_var, time_since_last_cp = update_with_datum_7(datum, 
+                                                                                              log_prob, 
+                                                                                              delta_mean,
+                                                                                              delta_var,
+                                                                                              time_since_last_cp,
+                                                                                              last_datum,
+                                                                                              opt)
+                    log_prob = [ [t[-1]] for t in log_prob ]
+                    delta_mean = [ [t[-1]] for t in delta_mean ]
+                    delta_var = [ [t[-1]] for t in delta_var ]
+                    time_since_last_cp = [[t[-1]] for t in time_since_last_cp]
+                
+                # re-normalize prob
+                z = np.log(np.sum([np.exp(t[-1]) for t in log_prob]))
+                log_prob = [[t[-1]-z] for t in log_prob]
+                
+        current_data_pos += 1
+        
+        if current_data_pos < 3:
+            last_datum = np.mean( data[0:current_data_pos] )
+        else:
+            last_datum = np.mean( data[(current_data_pos-3):current_data_pos] )
+            
+    return cp_list
+

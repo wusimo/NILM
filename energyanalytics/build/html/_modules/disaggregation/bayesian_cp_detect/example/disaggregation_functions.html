@@ -1,0 +1,646 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" lang="python 2.7.3">
+  <head>
+        <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>disaggregation.bayesian_cp_detect.example.disaggregation_functions &#8212; disaggregation algorithms 0.0.1 documentation</title>
+    <link rel="stylesheet" href="../../../../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../../../../_static/pygments.css" type="text/css" />
+    <script type="text/javascript" src="../../../../_static/documentation_options.js"></script>
+    <script type="text/javascript" src="../../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../../_static/doctools.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for disaggregation.bayesian_cp_detect.example.disaggregation_functions</h1><div class="highlight"><pre>
+<span class="c">#shape update shape</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="c"># set the input file path, you have to change this path</span>
+<span class="n">mod_path</span> <span class="o">=</span> <span class="s">&#39;/Users/Simo//Documents/energyanalytics/energyanalytics/disaggregation&#39;</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">mod_path</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">mod_path</span><span class="p">)</span>
+    
+<span class="n">mod_path</span> <span class="o">=</span> <span class="s">&#39;/Users/Simo//Documents/energyanalytics/energyanalytics/disaggregation&#39;</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">mod_path</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="p">):</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">mod_path</span><span class="p">)</span>
+    
+<span class="kn">from</span> <span class="nn">..</span> <span class="k">import</span> <span class="n">bayesian_cp_3</span> <span class="k">as</span> <span class="n">bcp</span>
+<span class="kn">from</span> <span class="nn">..</span> <span class="k">import</span> <span class="n">cp_detect</span>
+<span class="c"># make sure that the code is loaded to the lastest version</span>
+<span class="n">reload</span><span class="p">(</span><span class="n">bcp</span><span class="p">)</span>
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">scipy</span> <span class="k">as</span> <span class="nn">sp</span>
+<span class="kn">import</span> <span class="nn">datetime</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+<span class="kn">import</span> <span class="nn">operator</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">string</span>
+<span class="kn">import</span> <span class="nn">copy</span>
+<span class="kn">from</span> <span class="nn">sklearn.cluster</span> <span class="k">import</span> <span class="n">KMeans</span>
+<span class="kn">from</span> <span class="nn">sklearn.datasets</span> <span class="k">import</span> <span class="n">make_blobs</span>
+<span class="kn">from</span> <span class="nn">sklearn.metrics</span> <span class="k">import</span> <span class="n">silhouette_samples</span><span class="p">,</span> <span class="n">silhouette_score</span>
+<span class="kn">import</span> <span class="nn">operator</span>
+<span class="kn">import</span> <span class="nn">seaborn</span> <span class="k">as</span> <span class="nn">sns</span>
+<span class="kn">import</span> <span class="nn">operator</span>
+<span class="kn">from</span> <span class="nn">collections</span> <span class="k">import</span> <span class="n">defaultdict</span>
+<span class="c">#from datadef import wdayformat</span>
+
+<span class="k">def</span> <span class="nf">wdayformat</span><span class="p">(</span><span class="n">tm_wday</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">tm_wday</span><span class="o">==</span><span class="mi">1</span><span class="p">:</span>
+        <span class="n">strwday</span><span class="o">=</span><span class="s">&#39;Mon&#39;</span>
+    <span class="k">elif</span> <span class="n">tm_wday</span><span class="o">==</span><span class="mi">2</span><span class="p">:</span>
+        <span class="n">strwday</span><span class="o">=</span><span class="s">&#39;Tue&#39;</span>
+    <span class="k">elif</span> <span class="n">tm_wday</span><span class="o">==</span><span class="mi">3</span><span class="p">:</span>
+        <span class="n">strwday</span><span class="o">=</span><span class="s">&#39;Wed&#39;</span>
+    <span class="k">elif</span> <span class="n">tm_wday</span><span class="o">==</span><span class="mi">4</span><span class="p">:</span>
+        <span class="n">strwday</span><span class="o">=</span><span class="s">&#39;Thu&#39;</span>
+    <span class="k">elif</span> <span class="n">tm_wday</span><span class="o">==</span><span class="mi">5</span><span class="p">:</span>
+        <span class="n">strwday</span><span class="o">=</span><span class="s">&#39;Fri&#39;</span>
+    <span class="k">elif</span> <span class="n">tm_wday</span><span class="o">==</span><span class="mi">6</span><span class="p">:</span>
+        <span class="n">strwday</span><span class="o">=</span><span class="s">&#39;Sat&#39;</span>
+    <span class="k">elif</span> <span class="n">tm_wday</span><span class="o">==</span><span class="mi">7</span><span class="p">:</span>
+        <span class="n">strwday</span><span class="o">=</span><span class="s">&#39;Sun&#39;</span>            
+    <span class="k">return</span> <span class="n">strwday</span>
+
+<span class="k">def</span> <span class="nf">readfile</span><span class="p">(</span><span class="n">f</span><span class="p">,</span><span class="n">Col</span><span class="p">):</span> <span class="c">#read .csv files</span>
+    <span class="n">data</span><span class="o">=</span><span class="p">[]</span>
+    <span class="n">time</span><span class="o">=</span><span class="p">[]</span>
+    <span class="c">#head=&#39;&#39;</span>
+    <span class="n">lines</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">readlines</span><span class="p">()</span>
+    <span class="c">#label=[]</span>
+    <span class="c">#head+=lines[0]</span>
+    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">lines</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+        <span class="n">line</span><span class="o">=</span><span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">)</span>
+        <span class="n">line</span><span class="o">=</span><span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;,&#39;</span><span class="p">)</span>
+        <span class="n">tmp_time</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">line</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">tmp_data</span><span class="o">=</span><span class="mi">0</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">Col</span><span class="p">)):</span>
+            <span class="n">tmp_data</span><span class="o">+=</span><span class="nb">float</span><span class="p">(</span><span class="n">line</span><span class="p">[</span><span class="n">Col</span><span class="p">[</span><span class="n">i</span><span class="p">]])</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tmp_data</span><span class="p">),</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tmp_time</span><span class="p">),</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">time</span><span class="p">,</span><span class="n">data</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">rel_change</span><span class="p">(</span><span class="n">y</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    return relative change comparing to the closer neighbouring points</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">y</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">y</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">y</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">y</span><span class="p">[</span><span class="mi">2</span><span class="p">])])</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span><span class="n">y</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+
+<span class="k">def</span> <span class="nf">rel_change_filter_0819_3</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">data_input</span><span class="p">,</span> <span class="n">thre</span><span class="o">=.</span><span class="mi">2</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    filter data based on relative change</span>
+<span class="sd">    data points in data_input that below or above both neighbouring points</span>
+<span class="sd">    and have relative change above thre will be set as the average of neighbouring data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">thre_2</span> <span class="o">=</span> <span class="n">thre</span><span class="o">/</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="n">thre</span><span class="p">)</span>
+    <span class="n">id_filter</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_input</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> 
+     <span class="k">if</span> <span class="p">(</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">&gt;</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">and</span> <span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">&gt;</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span> <span class="ow">and</span> <span class="n">rel_change</span><span class="p">(</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span><span class="n">i</span><span class="o">+</span><span class="mi">2</span><span class="p">])</span><span class="o">&gt;</span><span class="n">thre</span><span class="p">)</span> <span class="ow">or</span>
+                 <span class="p">(</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">&lt;</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">and</span> <span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">&lt;</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span> <span class="ow">and</span> <span class="n">rel_change</span><span class="p">(</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span><span class="n">i</span><span class="o">+</span><span class="mi">2</span><span class="p">])</span><span class="o">&gt;</span><span class="n">thre_2</span><span class="p">)</span>
+    <span class="p">]</span>
+    <span class="n">data_input_2</span> <span class="o">=</span> <span class="p">[(</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">+</span><span class="n">data_input</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">])</span><span class="o">/</span><span class="mi">2</span> <span class="k">if</span> <span class="p">(</span><span class="n">i</span> <span class="ow">in</span> <span class="n">id_filter</span><span class="p">)</span> <span class="k">else</span> <span class="n">dat</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">dat</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">data_input</span><span class="p">)</span> <span class="p">]</span>
+    <span class="k">return</span> <span class="n">t</span><span class="p">,</span> <span class="n">data_input_2</span>
+
+<span class="k">def</span> <span class="nf">initial_disaggregate</span><span class="p">(</span><span class="n">t_all</span><span class="p">,</span><span class="n">y_all</span><span class="p">,</span><span class="n">num_day</span><span class="p">,</span><span class="n">period</span> <span class="o">=</span> <span class="mi">1440</span><span class="p">):</span>
+    
+    <span class="c">#date_current = date_start</span>
+    <span class="n">day</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">all_dat_seg</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">while</span> <span class="n">day</span> <span class="o">&lt;</span> <span class="n">num_day</span><span class="p">:</span>
+        <span class="c">#print &#39;reading: &#39;, date_current</span>
+
+        <span class="c">#t, y = read_dat_0819(date_current, 0, 23, &#39;../new_data/IHG&#39;)</span>
+        <span class="n">t</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">period</span><span class="p">)])</span>
+        <span class="n">y</span><span class="o">=</span><span class="n">y_all</span><span class="p">[(</span><span class="n">day</span><span class="p">)</span><span class="o">*</span><span class="n">period</span><span class="p">:(</span><span class="n">day</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">period</span><span class="p">]</span>
+        <span class="n">t_2</span><span class="p">,</span> <span class="n">y_2</span> <span class="o">=</span> <span class="n">rel_change_filter_0819_3</span><span class="p">(</span><span class="n">t</span><span class="p">,</span><span class="n">y</span><span class="p">)</span>
+        <span class="n">mu_list_list</span><span class="p">,</span> <span class="n">sigma_list_list</span><span class="p">,</span> <span class="n">prob_r_list_list</span><span class="p">,</span> <span class="n">r_list_list</span> <span class="o">=</span> <span class="n">cp_detect</span><span class="o">.</span><span class="n">bayesian_change_point_4</span><span class="p">(</span><span class="n">y_2</span><span class="p">,</span> <span class="n">r_blur</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
+        <span class="n">changepoint</span><span class="p">,</span> <span class="n">changepoint_p</span> <span class="o">=</span> <span class="n">cp_detect</span><span class="o">.</span><span class="n">get_change_point</span><span class="p">(</span><span class="n">prob_r_list_list</span><span class="p">)</span>
+        <span class="n">changepoint</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">t_2</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">changepoint</span><span class="p">)</span><span class="o">&gt;</span><span class="mi">1</span><span class="p">:</span>
+            <span class="n">dat_seg</span> <span class="o">=</span> <span class="p">[[</span><span class="n">y</span><span class="p">[</span><span class="n">cp_start</span><span class="p">:</span><span class="n">cp_end</span><span class="p">],</span> <span class="n">y</span><span class="p">[</span><span class="n">cp_start</span><span class="o">-</span><span class="mi">3</span><span class="p">:</span><span class="n">cp_start</span><span class="p">]]</span> <span class="k">for</span> <span class="n">cp_start</span><span class="p">,</span> <span class="n">cp_end</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">changepoint</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">changepoint</span><span class="p">[</span><span class="mi">1</span><span class="p">:])]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">dat_seg</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">all_dat_seg</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">dat_seg</span><span class="p">)</span>
+
+        <span class="c">#date_current+=datetime.timedelta(1)</span>
+        <span class="n">day</span><span class="o">+=</span><span class="mi">1</span>
+        
+    <span class="k">return</span> <span class="n">all_dat_seg</span>
+
+<span class="k">def</span> <span class="nf">Computeandplotsegments</span><span class="p">(</span><span class="n">t_all</span><span class="p">,</span><span class="n">y_all</span><span class="p">,</span><span class="n">days</span> <span class="o">=</span> <span class="mi">500</span><span class="p">):</span>
+
+    <span class="n">all_seg_april</span> <span class="o">=</span> <span class="n">initial_disaggregate</span><span class="p">(</span><span class="n">t_all</span><span class="p">,</span><span class="n">y_all</span><span class="p">,</span><span class="mi">500</span><span class="p">,</span><span class="n">period</span> <span class="o">=</span> <span class="mi">96</span><span class="p">)</span>
+    <span class="n">all_seg_april_normalized</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">all_seg_april</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span><span class="o">==</span><span class="mi">3</span><span class="p">]</span>
+    <span class="n">all_seg_april_normalized</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">all_seg_april_normalized</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">&gt;</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">all_positive_seg_april_normalized</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">all_seg_april_normalized</span> <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">min</span><span class="p">()</span><span class="o">&gt;</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">[</span><span class="mi">8</span><span class="p">,</span> <span class="mi">6</span><span class="p">])</span>
+
+    <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">all_seg_april_normalized</span><span class="p">:</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s">&#39;k-&#39;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=.</span><span class="mi">5</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=.</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s">&#39;time point after change point&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s">&#39;relative power shift&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">xlim</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">ylim</span><span class="p">([</span><span class="o">-</span><span class="mi">600</span><span class="p">,</span> <span class="mi">4000</span><span class="p">])</span>
+
+<span class="k">def</span> <span class="nf">plot_24h_data</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">raw_data</span><span class="p">,</span><span class="n">cp_list</span><span class="p">,</span><span class="n">k</span><span class="o">=</span><span class="mi">360</span><span class="p">):</span>
+    <span class="n">fig</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">nrows</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">[</span><span class="mi">18</span><span class="p">,</span> <span class="mi">10</span><span class="p">])</span>
+    
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">ax</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">axes</span><span class="p">):</span>
+        <span class="c">#ax.plot(t, data, &#39;r-&#39;, markersize=3, linewidth=1, label=&#39;smooth&#39;)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">raw_data</span><span class="p">,</span> <span class="s">&#39;k.&#39;</span><span class="p">,</span> <span class="n">markersize</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s">&#39;raw&#39;</span><span class="p">)</span>
+        
+        <span class="k">for</span> <span class="n">cp</span> <span class="ow">in</span> <span class="n">cp_list</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">([</span><span class="n">t</span><span class="p">[</span><span class="n">cp</span><span class="p">],</span> <span class="n">t</span><span class="p">[</span><span class="n">cp</span><span class="p">]],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1000</span><span class="p">],</span> <span class="s">&#39;k-&#39;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s">&#39;power&#39;</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">([</span><span class="mi">0</span><span class="o">+</span><span class="n">i</span><span class="o">*</span><span class="n">k</span><span class="p">,</span><span class="n">k</span><span class="o">+</span><span class="n">i</span><span class="o">*</span><span class="n">k</span><span class="p">])</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s">&#39;time/h&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+
+<span class="k">def</span> <span class="nf">extract_first_n</span><span class="p">(</span><span class="n">data_list</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">t</span><span class="p">[:</span><span class="n">n</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">data_list</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="p">)</span><span class="o">&gt;=</span><span class="n">n</span><span class="p">]</span>
+
+<span class="c"># integrated functions:</span>
+<div class="viewcode-block" id="integrated_clustering"><a class="viewcode-back" href="../../../../disaggregation/code.html#disaggregation.bayesian_cp_detect.example.disaggregation_functions.integrated_clustering">[docs]</a><span class="k">def</span> <span class="nf">integrated_clustering</span><span class="p">(</span><span class="n">t_all</span><span class="p">,</span><span class="n">y_all</span><span class="p">,</span><span class="n">num_of_days</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span><span class="n">period</span> <span class="o">=</span> <span class="mi">1440</span><span class="p">,</span><span class="n">trim</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span><span class="n">min_n_clusters</span> <span class="o">=</span> <span class="mi">4</span><span class="p">,</span> <span class="n">max_n_clusters</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span><span class="n">hierarchical</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+    
+    
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    method for finding the change shape based on unsupervised learning and changepoint detection on history data </span>
+<span class="sd">    </span>
+<span class="sd">    :param t_all: 1 dimension list of index of the history data used for unsupervised learning</span>
+<span class="sd">    :type t_all: list</span>
+<span class="sd">    :param y_all: 1 dimension list containing values of the history data used for unsupervised learning</span>
+<span class="sd">    :type y_all: list</span>
+<span class="sd">    :param num_of_days: length of history data used in unit of days</span>
+<span class="sd">    :type num_of_days: int</span>
+<span class="sd">    :param period: How many data points per day, in other words, the inverse of frequency of the given data </span>
+<span class="sd">    :type period: int</span>
+<span class="sd">    :param min_n_clusters: a prior knowledge on minimum number of clusters wanted</span>
+<span class="sd">    :type min_n_clusters: int</span>
+<span class="sd">    :param min_n_clusters: a prior knowledge on maximum number of clusters wanted</span>
+<span class="sd">    :type min_n_clusters: int</span>
+
+<span class="sd">    Suppose you want to get the cluster of change shapes from history data</span>
+
+<span class="sd">    &gt;&gt;&gt; cluster_mean,cluster_std,n_clusters,all_seg_per_cluster = integrated_clustering(t_all,y_all,num_of_days=500,period = 1440,trim=10,min_n_clusters = 17, max_n_clusters=18)</span>
+<span class="sd">    </span>
+<span class="sd">    and then plot it </span>
+
+<span class="sd">    &gt;&gt;&gt; plot_cluster_result(cluster_mean,cluster_std,n_clusters,all_seg_per_cluster)</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+
+
+    <span class="n">all_seg_april</span> <span class="o">=</span> <span class="n">initial_disaggregate</span><span class="p">(</span><span class="n">t_all</span><span class="p">,</span><span class="n">y_all</span><span class="p">,</span><span class="n">num_of_days</span><span class="p">,</span><span class="n">period</span> <span class="o">=</span> <span class="n">period</span><span class="p">)</span>
+    
+    <span class="sd">&#39;&#39;&#39; &#39;&#39;&#39;</span>
+    <span class="n">all_seg_april_normalized</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">all_seg_april</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span><span class="o">==</span><span class="mi">3</span><span class="p">]</span>
+    
+    <span class="sd">&#39;&#39;&#39; filter the empty segments&#39;&#39;&#39;</span>
+    <span class="n">all_seg_april_normalized</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">all_seg_april_normalized</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">&gt;</span><span class="mi">0</span><span class="p">]</span>
+    
+    <span class="sd">&#39;&#39;&#39; clustering in different ranges will probably have a better result&#39;&#39;&#39;</span>
+    <span class="k">if</span> <span class="n">hierarchical</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="k">elif</span> <span class="n">hierarchical</span> <span class="o">==</span><span class="mi">1</span><span class="p">:</span>
+        <span class="n">all_seg_april_normalized</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">all_seg_april_normalized</span> <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">&gt;</span><span class="mi">1000</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">all_seg_april_normalized</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">all_seg_april_normalized</span> <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">&lt;</span><span class="mi">1000</span><span class="p">]</span>
+    
+    <span class="sd">&#39;&#39;&#39; filter out the positive segments&#39;&#39;&#39;</span>
+    <span class="n">all_positive_seg_april_normalized</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">all_seg_april_normalized</span> <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">min</span><span class="p">()</span><span class="o">&gt;</span><span class="mi">0</span><span class="p">]</span>
+    
+    
+    <span class="n">all_seg_april_normalized_trim50</span> <span class="o">=</span> <span class="n">extract_first_n</span><span class="p">(</span><span class="n">all_positive_seg_april_normalized</span><span class="p">,</span> <span class="n">trim</span><span class="p">)</span>
+    <span class="n">cluster_average</span> <span class="o">=</span> <span class="p">[]</span>
+    
+    <span class="c"># find optimal clustering number using silhouette score</span>
+    
+    <span class="n">optimal_dict</span> <span class="o">=</span> <span class="p">{}</span>
+    
+    <span class="k">for</span> <span class="n">n_clusters</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">min_n_clusters</span><span class="p">,</span><span class="n">max_n_clusters</span><span class="p">):</span>
+        
+        <span class="n">y_pred</span> <span class="o">=</span> <span class="n">KMeans</span><span class="p">(</span><span class="n">n_clusters</span><span class="o">=</span><span class="n">n_clusters</span><span class="p">)</span><span class="o">.</span><span class="n">fit_predict</span><span class="p">(</span><span class="n">all_seg_april_normalized_trim50</span><span class="p">)</span>
+
+        <span class="n">cluster_average</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i_cluster</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_clusters</span><span class="p">):</span>
+            <span class="n">cluster_average</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">all_seg_april_normalized_trim50</span><span class="p">)</span> <span class="k">if</span> <span class="n">y_pred</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">==</span><span class="n">i_cluster</span><span class="p">])</span>
+            <span class="p">)</span> 
+
+        <span class="c"># sihouette score</span>
+        <span class="n">cluster_labels</span> <span class="o">=</span> <span class="n">y_pred</span>
+        <span class="n">sample_silhouette_values</span> <span class="o">=</span> <span class="n">silhouette_samples</span><span class="p">(</span><span class="n">all_seg_april_normalized_trim50</span><span class="p">,</span> <span class="n">cluster_labels</span><span class="p">)</span>
+        
+        <span class="n">silhouette_avg</span> <span class="o">=</span> <span class="n">silhouette_score</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">all_seg_april_normalized_trim50</span><span class="p">),</span> <span class="n">cluster_labels</span><span class="p">)</span>
+
+        <span class="n">optimal_dict</span><span class="p">[</span><span class="n">n_clusters</span><span class="p">]</span> <span class="o">=</span> <span class="n">silhouette_avg</span> <span class="o">+</span><span class="p">(</span><span class="n">sample_silhouette_values</span><span class="o">.</span><span class="n">min</span><span class="p">()</span><span class="o">+</span><span class="n">sample_silhouette_values</span><span class="o">.</span><span class="n">max</span><span class="p">())</span><span class="o">/</span><span class="mi">2</span>
+    
+    <span class="c"># n_clusters will give us the optimal number of clusters</span>
+    <span class="n">n_clusters</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">optimal_dict</span><span class="o">.</span><span class="n">iteritems</span><span class="p">(),</span> <span class="n">key</span><span class="o">=</span><span class="n">operator</span><span class="o">.</span><span class="n">itemgetter</span><span class="p">(</span><span class="mi">1</span><span class="p">))[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="c">#print n_clusters</span>
+    
+    <span class="n">y_pred</span> <span class="o">=</span> <span class="n">KMeans</span><span class="p">(</span><span class="n">n_clusters</span><span class="o">=</span><span class="n">n_clusters</span><span class="p">)</span><span class="o">.</span><span class="n">fit_predict</span><span class="p">(</span><span class="n">all_seg_april_normalized_trim50</span><span class="p">)</span>
+
+    <span class="n">cluster_average</span> <span class="o">=</span> <span class="p">[]</span>
+    
+    <span class="k">for</span> <span class="n">i_cluster</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_clusters</span><span class="p">):</span>
+        <span class="n">cluster_average</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">all_seg_april_normalized_trim50</span><span class="p">)</span> <span class="k">if</span> <span class="n">y_pred</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">==</span><span class="n">i_cluster</span><span class="p">])</span>
+        <span class="p">)</span> 
+    <span class="n">cluster_average_rank</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">cluster_average</span><span class="p">)[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">rank_map</span> <span class="o">=</span> <span class="p">{</span><span class="n">cluster_average_rank</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">]:</span><span class="n">i_cluster</span> <span class="k">for</span> <span class="n">i_cluster</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_clusters</span><span class="p">)}</span> <span class="c"># old index:new index</span>
+
+    <span class="n">y_pred_old</span> <span class="o">=</span> <span class="n">y_pred</span>
+    <span class="n">y_pred</span> <span class="o">=</span> <span class="p">[</span><span class="n">rank_map</span><span class="p">[</span><span class="n">x</span><span class="p">]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">y_pred</span><span class="p">]</span>
+    <span class="n">all_seg_per_cluster</span> <span class="o">=</span> <span class="p">[[]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_clusters</span><span class="p">)</span> <span class="p">]</span>
+    <span class="k">for</span> <span class="n">i_seg</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">all_seg_april_normalized_trim50</span><span class="p">)):</span>
+        <span class="n">all_seg_per_cluster</span><span class="p">[</span><span class="n">y_pred</span><span class="p">[</span><span class="n">i_seg</span><span class="p">]]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">all_seg_april_normalized_trim50</span><span class="p">[</span><span class="n">i_seg</span><span class="p">])</span>
+        
+    <span class="n">cluster_mean</span> <span class="o">=</span> <span class="p">[[]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_clusters</span><span class="p">)</span> <span class="p">]</span>
+    <span class="n">cluster_std</span> <span class="o">=</span> <span class="p">[[]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_clusters</span><span class="p">)</span> <span class="p">]</span>
+    <span class="k">for</span> <span class="n">i_cluster</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_clusters</span><span class="p">):</span>
+        <span class="n">cluster_mean</span><span class="p">[</span> <span class="n">i_cluster</span> <span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">all_seg_per_cluster</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">]),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">cluster_std</span><span class="p">[</span> <span class="n">i_cluster</span> <span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">all_seg_per_cluster</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">]),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    
+    
+    
+    
+    <span class="c">#cluster_mean_2 = cluster_mean[5:6]</span>
+    </div>
+    <span class="k">return</span> <span class="n">cluster_mean</span><span class="p">,</span><span class="n">cluster_std</span><span class="p">,</span><span class="n">n_clusters</span><span class="p">,</span><span class="n">all_seg_per_cluster</span>
+
+<span class="k">def</span> <span class="nf">DP_state_generation</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">N</span><span class="o">==</span><span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[[</span><span class="mi">0</span><span class="p">],[</span><span class="mi">1</span><span class="p">]]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">return_list</span> <span class="o">=</span> <span class="n">DP_state_generation</span><span class="p">(</span><span class="n">N</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">toreturn</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">return_list</span><span class="p">:</span>
+            <span class="c">#print i</span>
+            <span class="n">i</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">toreturn</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
+            <span class="n">i</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+            <span class="n">i</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+            <span class="c">#print i</span>
+            <span class="n">toreturn</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
+                
+        <span class="c">#print toreturn</span>
+        <span class="k">return</span> <span class="n">toreturn</span>
+
+    <span class="n">color_list</span> <span class="o">=</span> <span class="n">sns</span><span class="o">.</span><span class="n">color_palette</span><span class="p">(</span><span class="s">&quot;hls&quot;</span><span class="p">,</span> <span class="n">n_clusters</span><span class="p">)</span>
+
+    <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">nrows</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span><span class="n">ncols</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span><span class="n">figsize</span><span class="o">=</span><span class="p">[</span><span class="mi">20</span><span class="p">,</span><span class="mi">12</span><span class="p">]);</span>
+    <span class="n">ax</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+
+    <span class="k">for</span> <span class="n">i_cluster</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_clusters</span><span class="p">):</span>
+        <span class="n">ax_current</span> <span class="o">=</span> <span class="n">ax</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">]</span>
+
+        <span class="k">for</span> <span class="n">seg</span> <span class="ow">in</span> <span class="n">all_seg_per_cluster</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">]:</span>
+            <span class="n">ax_current</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">seg</span><span class="p">,</span> <span class="s">&#39;-&#39;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=.</span><span class="mi">3</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">color_list</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">])</span>
+        <span class="n">ax_current</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">])</span>
+        <span class="n">ax_current</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">([</span><span class="o">-</span><span class="mi">500</span><span class="p">,</span> <span class="mi">4000</span><span class="p">])</span>
+        <span class="n">ax_current</span><span class="o">.</span><span class="n">plot</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span><span class="mi">50</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">],</span> <span class="s">&#39;k--&#39;</span><span class="p">)</span>    
+        <span class="n">ax_current</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">cluster_mean</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="n">color_list</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">])</span>
+        <span class="n">ax_current</span><span class="o">.</span><span class="n">fill_between</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+                                <span class="p">,</span> <span class="n">cluster_mean</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">]</span><span class="o">-</span><span class="n">cluster_std</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">]</span>
+                                <span class="p">,</span> <span class="n">cluster_mean</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">]</span><span class="o">+</span><span class="n">cluster_std</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">]</span>
+                                <span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">color_list</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">],</span> <span class="n">alpha</span><span class="o">=.</span><span class="mi">8</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">generate_state_prob_list</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
+    <span class="n">toreturn</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">toreturnlist</span> <span class="o">=</span> <span class="n">DP_state_generation</span><span class="p">(</span><span class="n">N</span><span class="p">)</span>
+    <span class="n">k</span> <span class="o">=</span> <span class="mi">1</span><span class="o">/</span><span class="nb">float</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">toreturnlist</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">toreturnlist</span><span class="p">:</span>
+        <span class="n">toreturn</span><span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="n">i</span><span class="p">)]</span> <span class="o">=</span> <span class="n">k</span>
+        
+    <span class="k">return</span> <span class="n">toreturn</span>
+
+<span class="k">def</span> <span class="nf">viterbi_for_missing_change_point</span><span class="p">(</span><span class="n">shape_prob_list</span><span class="p">,</span> <span class="n">state_prob_list</span><span class="p">,</span> <span class="n">boot_state_prob_list</span><span class="p">,</span> <span class="n">data_seg</span><span class="p">,</span> <span class="n">obs_mat</span><span class="p">,</span> <span class="n">power_usage</span><span class="p">,</span><span class="n">alpha</span> <span class="o">=</span> <span class="mi">1</span><span class="p">):</span>
+    
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    </span>
+<span class="sd">    Explaination:</span>
+
+<span class="sd">    example suppose we have three segment , so in total we have 2 changepoints</span>
+<span class="sd">    then the shape_prob_list</span>
+<span class="sd">    </span>
+<span class="sd">    </span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    shape_prob_list: the probability of each shape at each changepoint</span>
+
+<span class="sd">    state_prob_list: initial state probability </span>
+<span class="sd">    </span>
+<span class="sd">    boot_state_prob_list:</span>
+
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="c"># originally shape means the &#39;change&#39;, state means the actual usage...</span>
+
+    <span class="c"># compute the number of segments</span>
+    <span class="n">n_seg</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data_seg</span><span class="p">)</span>
+
+    <span class="c"># the list to store the result</span>
+    <span class="n">state_prob_list_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">state_prob_list</span><span class="p">]</span>
+    <span class="n">state_memory_list_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">shape_memory_list_list</span> <span class="o">=</span> <span class="p">[]</span>
+    
+    
+    <span class="c"># the main loop to loop through all changepoint</span>
+    <span class="k">for</span> <span class="n">i_seg</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_seg</span><span class="p">):</span>
+        <span class="c"># first to compute the mean of the current segment</span>
+        <span class="n">seg_mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">data_seg</span><span class="p">[</span><span class="n">i_seg</span><span class="p">])</span>
+        <span class="c"># initialize the probability for next state</span>
+        <span class="n">next_state_prob_list</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="p">:</span><span class="mi">0</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">state_prob_list</span><span class="o">.</span><span class="n">keys</span><span class="p">()}</span>
+        <span class="n">state_memory_list</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="p">:</span><span class="mi">0</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">state_prob_list</span><span class="o">.</span><span class="n">keys</span><span class="p">()}</span> <span class="c">#</span>
+        <span class="n">shape_memory_list</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="p">:</span><span class="mi">0</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">state_prob_list</span><span class="o">.</span><span class="n">keys</span><span class="p">()}</span> <span class="c">#</span>
+
+        <span class="k">for</span> <span class="n">next_state</span><span class="p">,</span> <span class="n">next_state_prob</span> <span class="ow">in</span> <span class="n">next_state_prob_list</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+
+            <span class="n">max_prob</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s">&#39;Inf&#39;</span><span class="p">)</span>
+            <span class="n">max_past_state</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">()</span>
+            <span class="n">max_shape</span> <span class="o">=</span> <span class="p">()</span>
+            <span class="c">#print max(shape_prob_list[i_seg].iteritems(),key = operator.itemgetter(1))[0]</span>
+            
+            <span class="c"># loop through all possible changes...</span>
+            <span class="k">for</span> <span class="n">shape_code</span><span class="p">,</span> <span class="n">shape_prob</span> <span class="ow">in</span> <span class="n">shape_prob_list</span><span class="p">[</span><span class="n">i_seg</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="c">#print obs_mat,shape_code</span>
+                <span class="c"># compute the corresponding changes</span>
+                <span class="n">change_state</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">obs_mat</span><span class="p">,</span> <span class="n">shape_code</span><span class="p">)</span> <span class="c"># if the obs_mat is identity matrix then the change_state = shape_code</span>
+                <span class="n">past_state</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">subtract</span><span class="p">(</span><span class="n">next_state</span><span class="p">,</span> <span class="n">change_state</span><span class="p">))</span>  <span class="c"># find out the corresponding past_state</span>
+                <span class="k">if</span> <span class="n">past_state</span> <span class="ow">in</span> <span class="n">state_prob_list</span><span class="p">:</span> <span class="c"># the past state should be all positive</span>
+                    <span class="k">if</span> <span class="n">state_prob_list</span><span class="p">[</span><span class="n">past_state</span><span class="p">]</span> <span class="o">*</span> <span class="n">shape_prob</span> <span class="o">+</span> <span class="n">alpha</span><span class="o">*</span><span class="n">boot_state_prob_list</span><span class="p">[</span><span class="n">i_seg</span><span class="o">+</span><span class="mi">1</span><span class="p">][</span><span class="n">next_state</span><span class="p">]</span>  <span class="o">&gt;</span> <span class="n">max_prob</span><span class="p">:</span>
+                        <span class="n">max_prob</span> <span class="o">=</span> <span class="n">state_prob_list</span><span class="p">[</span><span class="n">past_state</span><span class="p">]</span> <span class="o">*</span> <span class="n">shape_prob</span> <span class="o">+</span> <span class="n">alpha</span><span class="o">*</span><span class="n">boot_state_prob_list</span><span class="p">[</span><span class="n">i_seg</span><span class="o">+</span><span class="mi">1</span><span class="p">][</span><span class="n">next_state</span><span class="p">]</span>
+                        <span class="n">max_past_state</span> <span class="o">=</span> <span class="n">past_state</span>
+                        <span class="n">max_shape</span> <span class="o">=</span> <span class="n">shape_code</span>
+            <span class="n">state_memory_list</span><span class="p">[</span><span class="n">next_state</span><span class="p">]</span> <span class="o">=</span> <span class="n">max_past_state</span>  <span class="c"># the table 2, write down the most possible past state</span>
+            <span class="n">next_state_prob_list</span><span class="p">[</span><span class="n">next_state</span><span class="p">]</span> <span class="o">=</span> <span class="n">max_prob</span>     
+            <span class="n">shape_memory_list</span><span class="p">[</span><span class="n">next_state</span><span class="p">]</span> <span class="o">=</span> <span class="n">max_shape</span>
+        
+        <span class="n">computed</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="n">operator</span><span class="o">.</span><span class="n">mul</span><span class="p">,</span><span class="nb">max</span><span class="p">(</span><span class="n">state_prob_list</span><span class="o">.</span><span class="n">iteritems</span><span class="p">(),</span><span class="n">key</span> <span class="o">=</span> <span class="n">operator</span><span class="o">.</span><span class="n">itemgetter</span><span class="p">(</span><span class="mi">1</span><span class="p">))[</span><span class="mi">0</span><span class="p">],</span><span class="n">power_usage</span><span class="p">))</span>
+        <span class="n">observed</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="n">operator</span><span class="o">.</span><span class="n">mul</span><span class="p">,</span><span class="nb">max</span><span class="p">(</span><span class="n">boot_state_prob_list</span><span class="p">[</span><span class="n">i_seg</span><span class="p">]</span><span class="o">.</span><span class="n">iteritems</span><span class="p">(),</span><span class="n">key</span> <span class="o">=</span> <span class="n">operator</span><span class="o">.</span><span class="n">itemgetter</span><span class="p">(</span><span class="mi">1</span><span class="p">))[</span><span class="mi">0</span><span class="p">],</span><span class="n">power_usage</span><span class="p">))</span>
+        
+        <span class="c">#print computed</span>
+        <span class="c">#print observed</span>
+
+        <span class="c">#if (float(computed)-float(observed))/float(observed)&lt;0.3:</span>
+            
+        <span class="n">state_prob_list</span> <span class="o">=</span> <span class="n">next_state_prob_list</span>
+        
+        <span class="c">#print &#39;##############&#39;</span>
+        <span class="n">state_prob_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">next_state_prob_list</span><span class="p">)</span>
+        <span class="n">state_memory_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">state_memory_list</span><span class="p">)</span>
+        <span class="n">shape_memory_list_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">shape_memory_list</span><span class="p">)</span>
+
+
+    <span class="n">trace_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">shape_list</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="n">end_state</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">state_prob_list_list</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">(),</span> <span class="n">key</span><span class="o">=</span><span class="n">operator</span><span class="o">.</span><span class="n">itemgetter</span><span class="p">(</span><span class="mi">1</span><span class="p">))[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">trace_list</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">end_state</span><span class="p">)</span>
+    
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">n_seg</span><span class="p">)):</span>
+        <span class="n">max_shape</span> <span class="o">=</span> <span class="n">shape_memory_list_list</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">end_state</span><span class="p">]</span>
+        <span class="n">end_state</span> <span class="o">=</span> <span class="n">state_memory_list_list</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">end_state</span><span class="p">]</span>
+        <span class="n">trace_list</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">end_state</span><span class="p">)</span>
+        <span class="n">shape_list</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">max_shape</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">trace_list</span><span class="p">,</span> <span class="n">shape_list</span>
+
+<span class="k">def</span> <span class="nf">integrated_dissagregate</span><span class="p">(</span><span class="n">y_all</span><span class="p">,</span><span class="n">period</span><span class="p">,</span><span class="n">cluster_mean_2</span><span class="p">,</span><span class="n">day</span> <span class="o">=</span> <span class="mi">65</span><span class="p">,</span><span class="n">n_equipment_type</span> <span class="o">=</span> <span class="mi">4</span><span class="p">,</span><span class="n">n_equipment</span> <span class="o">=</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span><span class="mi">2</span><span class="p">,</span><span class="mi">2</span><span class="p">,</span><span class="mi">2</span><span class="p">],</span><span class="n">obs_mat</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">],[</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">],[</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span><span class="p">],[</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">]]),</span><span class="n">power_usage</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">]):</span>
+    
+    <span class="n">opt</span> <span class="o">=</span> <span class="n">bcp</span><span class="o">.</span><span class="n">set_disaggregation_option</span><span class="p">(</span><span class="n">change_shape</span><span class="o">=</span><span class="n">cluster_mean_2</span><span class="p">,</span> 
+                               <span class="n">init_pos_std</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">([</span><span class="nb">float</span><span class="p">(</span><span class="mi">200</span><span class="o">/</span><span class="mi">3</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="mi">200</span><span class="o">/</span><span class="mi">3</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="mi">400</span><span class="o">/</span><span class="mi">3</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="mi">400</span><span class="o">/</span><span class="mi">3</span><span class="p">)])</span>
+                                <span class="p">)</span>
+    
+    <span class="n">t</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">period</span><span class="p">)])</span>
+    <span class="n">data</span><span class="o">=</span><span class="n">y_all</span><span class="p">[(</span><span class="n">day</span><span class="p">)</span><span class="o">*</span><span class="n">period</span><span class="p">:(</span><span class="n">day</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="n">period</span><span class="p">]</span>
+    <span class="n">cp_list</span> <span class="o">=</span> <span class="n">bcp</span><span class="o">.</span><span class="n">disaggregate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span><span class="n">opt</span><span class="p">)</span>
+    <span class="n">data_seg</span><span class="p">,</span> <span class="n">n_seg</span><span class="p">,</span> <span class="n">data_seg_raw_last</span> <span class="o">=</span> <span class="n">bcp</span><span class="o">.</span><span class="n">segment_data</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">cp_list</span><span class="p">)</span>
+    <span class="n">new_data_seg</span><span class="p">,</span> <span class="n">new_n_seg</span><span class="p">,</span> <span class="n">new_data_seg_raw_last</span> <span class="o">=</span> <span class="n">bcp</span><span class="o">.</span><span class="n">segment_data_new</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">cp_list</span><span class="p">)</span>
+    <span class="n">shape_matched</span> <span class="o">=</span> <span class="n">cluster_mean_2</span>
+    <span class="n">n_shape_matched</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">shape_matched</span><span class="p">)</span>
+    <span class="c">#all_shape_code = bcp.shape_code_gen(n_shape_matched)</span>
+    <span class="n">all_shape_code</span> <span class="o">=</span> <span class="n">bcp</span><span class="o">.</span><span class="n">shape_code_gen_new</span><span class="p">(</span><span class="n">n_shape_matched</span><span class="p">,</span><span class="n">n_equipment</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">shape_dict</span> <span class="o">=</span> <span class="n">bcp</span><span class="o">.</span><span class="n">combine_shape</span><span class="p">(</span><span class="n">shape_matched</span><span class="p">,</span> <span class="n">all_shape_code</span><span class="p">)</span>
+    <span class="c">#shape_prob_list = bcp.get_seg_prob(data_seg, shape_dict)</span>
+
+    <span class="n">new_shape_prob_list</span> <span class="o">=</span> <span class="n">bcp</span><span class="o">.</span><span class="n">get_seg_prob_positive</span><span class="p">(</span><span class="n">new_data_seg</span><span class="p">,</span> <span class="n">shape_dict</span><span class="p">)</span>
+    
+    
+    
+    
+    
+    <span class="n">shape_prob_list</span> <span class="o">=</span> <span class="n">bcp</span><span class="o">.</span><span class="n">get_seg_prob</span><span class="p">(</span><span class="n">data_seg</span><span class="p">,</span> <span class="n">shape_dict</span><span class="p">)</span>
+    
+    
+    
+    <span class="n">state_prob_list</span> <span class="o">=</span> <span class="n">generate_state_prob_list</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">cluster_mean_2</span><span class="p">))</span>
+    
+    
+    <span class="c">#obs_mat = np.array([[1,0,0,0,0],[0,1,0,0,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1]])</span>
+    
+    <span class="k">for</span> <span class="n">item</span><span class="p">,</span><span class="n">keys</span> <span class="ow">in</span> <span class="n">state_prob_list</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+        <span class="n">state_prob_list</span><span class="p">[</span><span class="n">item</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_shape_prob_list</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="n">item</span><span class="p">]</span>
+    
+    <span class="c">#trace_list, shape_list = bcp.viterbi(shape_prob_list, new_shape_prob_list[0], data_seg, obs_mat)</span>
+    <span class="c">#trace_list, shape_list = viterbi_new(shape_prob_list,state_prob_list,new_shape_prob_list,data_seg,obs_mat,power_usage)</span>
+    <span class="n">trace_list</span><span class="p">,</span> <span class="n">shape_list</span> <span class="o">=</span> <span class="n">viterbi_for_missing_change_point</span><span class="p">(</span><span class="n">shape_prob_list</span><span class="p">,</span><span class="n">state_prob_list</span><span class="p">,</span><span class="n">new_shape_prob_list</span><span class="p">,</span><span class="n">data_seg</span><span class="p">,</span><span class="n">obs_mat</span><span class="p">,</span><span class="n">power_usage</span><span class="p">,</span><span class="n">alpha</span> <span class="o">=</span> <span class="mi">100</span><span class="p">)</span>
+    
+    <span class="n">predicted_profile</span> <span class="o">=</span> <span class="n">bcp</span><span class="o">.</span><span class="n">generate_predicted_profile</span><span class="p">(</span><span class="n">cp_list</span><span class="p">,</span> <span class="n">shape_matched</span><span class="p">,</span> <span class="n">shape_list</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">n_equipment_type</span><span class="p">,</span> <span class="n">obs_mat</span><span class="p">,</span> <span class="n">trace_list</span><span class="p">)</span>
+    
+    <span class="k">return</span> <span class="n">predicted_profile</span>
+
+<span class="k">def</span> <span class="nf">plot_dissagregation</span><span class="p">(</span><span class="n">predicted_profile</span><span class="p">,</span><span class="n">t</span><span class="p">):</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span> <span class="o">=</span> <span class="p">[</span><span class="mi">16</span><span class="p">,</span><span class="mi">8</span><span class="p">])</span>
+    <span class="k">for</span> <span class="n">tmp</span> <span class="ow">in</span> <span class="n">predicted_profile</span><span class="p">:</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">t</span><span class="p">,</span><span class="n">tmp</span><span class="p">,</span><span class="n">linewidth</span> <span class="o">=</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="c">#plt.plot(t,data,&#39;k.&#39;,markersize = 2)</span>
+
+    <span class="n">plt</span><span class="o">.</span><span class="n">xlim</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span><span class="mi">100</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">ylim</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span><span class="mi">800</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s">&#39;t/h&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s">&#39;power&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">plot_dissagregation_2</span><span class="p">(</span><span class="n">predicted_profile</span><span class="p">,</span><span class="n">t</span><span class="p">):</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span> <span class="o">=</span> <span class="p">[</span><span class="mi">16</span><span class="p">,</span><span class="mi">8</span><span class="p">])</span>
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span><span class="n">tmp</span> <span class="ow">in</span> <span class="n">predicted_profile</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">t</span><span class="p">,</span><span class="n">tmp</span><span class="p">,</span><span class="n">linewidth</span> <span class="o">=</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="c">#plt.plot(t,data,&#39;k.&#39;,markersize = 2)</span>
+
+    <span class="n">plt</span><span class="o">.</span><span class="n">xlim</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span><span class="mi">1500</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">ylim</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span><span class="mi">3000</span><span class="p">])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s">&#39;t/h&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s">&#39;power&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">n_dimension_identity_matrix</span><span class="p">(</span><span class="n">cluster_mean_2</span><span class="p">):</span>
+    <span class="n">to_return_list</span>  <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="nb">len</span><span class="p">(</span><span class="n">cluster_mean_2</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">):</span>
+        <span class="n">to_return_list</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="mi">0</span> <span class="k">if</span> <span class="n">j</span><span class="o">!=</span><span class="n">i</span> <span class="k">else</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="nb">len</span><span class="p">(</span><span class="n">cluster_mean_2</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">)])</span>
+    <span class="k">return</span> <span class="n">to_return_list</span>
+
+<span class="k">def</span> <span class="nf">plot_cluster_result</span><span class="p">(</span><span class="n">cluster_mean</span><span class="p">,</span><span class="n">cluster_std</span><span class="p">,</span><span class="n">n_clusters</span><span class="p">,</span><span class="n">all_seg_per_cluster</span><span class="p">):</span>  
+
+    <span class="n">color_list</span> <span class="o">=</span> <span class="n">sns</span><span class="o">.</span><span class="n">color_palette</span><span class="p">(</span><span class="s">&quot;hls&quot;</span><span class="p">,</span> <span class="n">n_clusters</span><span class="p">)</span>
+
+    <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">nrows</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span><span class="n">ncols</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span><span class="n">figsize</span><span class="o">=</span><span class="p">[</span><span class="mi">20</span><span class="p">,</span><span class="mi">12</span><span class="p">]);</span>
+    <span class="n">ax</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+
+    <span class="k">for</span> <span class="n">i_cluster</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_clusters</span><span class="p">):</span>
+        <span class="n">ax_current</span> <span class="o">=</span> <span class="n">ax</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">]</span>
+
+        <span class="k">for</span> <span class="n">seg</span> <span class="ow">in</span> <span class="n">all_seg_per_cluster</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">]:</span>
+            <span class="n">ax_current</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">seg</span><span class="p">,</span> <span class="s">&#39;-&#39;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=.</span><span class="mi">3</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">color_list</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">])</span>
+        <span class="n">ax_current</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">])</span>
+        <span class="n">ax_current</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">([</span><span class="o">-</span><span class="mi">500</span><span class="p">,</span> <span class="mi">4000</span><span class="p">])</span>
+        <span class="n">ax_current</span><span class="o">.</span><span class="n">plot</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span><span class="mi">50</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">],</span> <span class="s">&#39;k--&#39;</span><span class="p">)</span>    
+        <span class="n">ax_current</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">cluster_mean</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="n">color_list</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">])</span>
+        <span class="n">ax_current</span><span class="o">.</span><span class="n">fill_between</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+                                <span class="p">,</span> <span class="n">cluster_mean</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">]</span><span class="o">-</span><span class="n">cluster_std</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">]</span>
+                                <span class="p">,</span> <span class="n">cluster_mean</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">]</span><span class="o">+</span><span class="n">cluster_std</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">]</span>
+                                <span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">color_list</span><span class="p">[</span><span class="n">i_cluster</span><span class="p">],</span> <span class="n">alpha</span><span class="o">=.</span><span class="mi">8</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">construct_obs_mat</span><span class="p">(</span><span class="n">list_of_shapes</span><span class="p">,</span><span class="n">mapping_variable</span><span class="p">,</span><span class="n">appliance_list</span><span class="p">):</span>
+    <span class="n">obs_mat</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">appliance_list</span><span class="p">)):</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span> <span class="k">for</span> <span class="n">jj</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">list_of_shapes</span><span class="p">))]</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">mapping_variable</span><span class="p">[</span><span class="n">i</span><span class="p">]:</span>
+            <span class="n">row</span><span class="p">[</span><span class="n">k</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">obs_mat</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">obs_mat</span>
+
+<span class="k">def</span> <span class="nf">wrapped_integrated_dissagregate</span><span class="p">(</span><span class="n">y_all</span><span class="p">,</span><span class="n">appliance_list</span><span class="p">,</span><span class="n">mapping_variable</span><span class="p">,</span><span class="n">power_usage</span><span class="p">,</span><span class="n">list_of_shapes</span><span class="p">,</span><span class="n">period</span> <span class="o">=</span> <span class="mi">1440</span><span class="p">,</span><span class="n">day</span> <span class="o">=</span> <span class="mi">65</span><span class="p">):</span>
+    <span class="n">predicted_profile</span> <span class="o">=</span> <span class="n">integrated_dissagregate</span><span class="p">(</span><span class="n">y_all</span><span class="p">,</span><span class="n">period</span><span class="p">,</span><span class="n">list_of_shapes</span><span class="p">,</span><span class="n">day</span> <span class="o">=</span> <span class="n">day</span><span class="p">,</span><span class="n">n_equipment_type</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">appliance_list</span><span class="p">),</span><span class="n">n_equipment</span><span class="o">=</span><span class="p">[</span><span class="mi">2</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="nb">len</span><span class="p">(</span><span class="n">appliance_list</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">)],</span><span class="n">obs_mat</span><span class="o">=</span><span class="n">construct_obs_mat</span><span class="p">(</span><span class="n">list_of_shapes</span><span class="p">,</span><span class="n">mapping_variable</span><span class="p">,</span><span class="n">appliance_list</span><span class="p">),</span><span class="n">power_usage</span> <span class="o">=</span> <span class="n">power_usage</span><span class="p">)</span>
+    <span class="n">toreturn</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">appliance_list</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+        <span class="n">toreturn</span><span class="p">[</span><span class="n">appliance_list</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span> <span class="o">=</span> <span class="n">predicted_profile</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+    <span class="n">toreturn</span><span class="p">[</span><span class="s">&#39;other&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">predicted_profile</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">toreturn</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd"># get the file input</span>
+<span class="sd">filename=&#39;/Users/Simo/Desktop/equota/disaggrREDD/house1_output15s&#39;</span>
+<span class="sd">filext=&#39;.dat&#39;</span>
+<span class="sd">f_input = file(filename+filext,&#39;r&#39;)</span>
+<span class="sd">AppNo=[3,4,5,6,7,8,9,11,12,13,14,15,16,17,18,19,20] #Choose App#</span>
+<span class="sd">period=1440</span>
+<span class="sd">N=1</span>
+<span class="sd"># the data will be t_all (time) y_all(consumption)</span>
+<span class="sd">(t_all,y_all)=np.array(readfile(f_input,[i-2 for i in AppNo]))</span>
+
+<span class="sd"># start clustering</span>
+<span class="sd">cluster_mean,cluster_std,n_clusters,all_seg_per_cluster = integrated_clustering(t_all,y_all,num_of_days=500,period = 1440,trim=10,min_n_clusters = 17, max_n_clusters=18)</span>
+<span class="sd">#plot_cluster_result(cluster_mean,cluster_std,n_clusters,all_seg_per_cluster)</span>
+
+
+<span class="sd">t=np.array([i+1 for i in range(period)])</span>
+<span class="sd">y=y_all[N*period:(N+1)*period]</span>
+<span class="sd">day = 65</span>
+<span class="sd">t=np.array([i+1 for i in range(period)])</span>
+<span class="sd">y=y_all[(day)*period:(day+1)*period]</span>
+<span class="sd">t_2, y_2 = rel_change_filter_0819_3(t,y)</span>
+<span class="sd">mu_list_list, sigma_list_list, prob_r_list_list, r_list_list = cp_detect.bayesian_change_point_4(y_2, r_blur=30)</span>
+<span class="sd">changepoint, changepoint_p = cp_detect.get_change_point(prob_r_list_list)</span>
+<span class="sd">changepoint.append(len(t_2)-1)</span>
+
+<span class="sd">#if you want to plot call this function   </span>
+<span class="sd">#plot_24h_data(t_2,y_2,changepoint)</span>
+
+
+<span class="sd"># start dissagregate</span>
+<span class="sd">cluster_mean_2 = cluster_mean</span>
+<span class="sd">cluster_mean = []</span>
+<span class="sd">cluster_mean.append(cluster_mean_2[6])</span>
+<span class="sd">cluster_mean.append(cluster_mean_2[10])</span>
+<span class="sd">cluster_mean.append(cluster_mean_2[15])</span>
+<span class="sd">cluster_mean.append(cluster_mean_2[16])</span>
+<span class="sd">cluster_mean.append(cluster_mean_2[13])</span>
+<span class="sd">cluster_mean_2 = cluster_mean</span>
+
+<span class="sd"># input for the dissagregate</span>
+<span class="sd">list_of_shapes = cluster_mean_2</span>
+<span class="sd">appliance_list = [1,2,3,4,5]</span>
+<span class="sd">mapping_variable = [[1],[2],[3],[4],[5]] # in this case this is  a one-to-one mapping</span>
+<span class="sd">power_usage = [i.mean() for i in cluster_mean_2] # you need to have the information about the power usage for each appliances</span>
+<span class="sd">predicted_profile = wrapped_integrated_dissagregate(y_all,appliance_list,mapping_variable,power_usage,list_of_shapes,period = 1440,day = 65)</span>
+<span class="sd">plot_dissagregation_2(predicted_profile,np.array([i+1 for i in range(period)]))</span>
+
+<span class="sd">#predicted_profile = integrated_dissagregate(y_all,1440,cluster_mean_2,day = 65,n_equipment_type = len(cluster_mean_2),n_equipment=[2 for i in range(1,len(cluster_mean_2)+1)],obs_mat=n_dimension_identity_matrix(cluster_mean_2),power_usage = [i.mean() for i in cluster_mean_2])  </span>
+<span class="sd">#print predicted_profile</span>
+<span class="sd">#plot_dissagregation(predicted_profile,np.array([i+1 for i in range(period)]))</span>
+
+
+<span class="sd">#TODO: missing functions to handle update clustering information</span>
+
+
+<span class="sd">#mapping</span>
+<span class="sd">&#39;&#39;&#39;</span> 
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper"><div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2018, Simo Wu.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.7.0b2</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.10</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
