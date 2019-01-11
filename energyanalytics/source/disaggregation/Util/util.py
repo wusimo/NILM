@@ -1,5 +1,42 @@
 import numpy as np
 
+# Temporarily put these two analytics tool function in the util file
+def F1Score(predicted,real):
+    if len(predicted)!=len(real):
+        return None
+    # compute the True positives
+    TP = np.sum(np.array([1 if (predicted[i]>0 and real[i]>0) else 0 for i in range(len(predicted))]))
+    # compute the False positives
+    FP = np.sum(np.array([1 if (predicted[i]>0 and real[i]==0) else 0 for i in range(len(predicted))]))
+    # compute the precision
+    print TP,FP
+    P = float(TP)/float(TP+FP)
+    
+    # compute the False Negatives
+    FN = np.sum(np.array([1 if (predicted[i]==0 and real[i]>0) else 0 for i in range(len(predicted))]))
+    # compute the True Negatives
+    TN = np.sum(np.array([1 if (predicted[i]==0 and real[i]==0) else 0 for i in range(len(predicted))]))
+    print FN,TN
+    # compute the recall
+    if TP==0 and FN==0:
+        return P
+    R = float(TP)/float(TP+FN) 
+
+    # return the harmonic average of the precision and recall
+    print P,R
+    if P==0 and R==0:
+        return 0
+    else:
+        return 2*P*R/(P+R)
+
+def RMSE(predicted,real):
+    """
+    compute the Root mean square error per device
+    """
+    if len(predicted)!=len(real):
+        return None
+    else:
+        return np.sqrt(np.mean(np.square(np.array(predicted)-np.array(real))))
 
 def find_nearest(known_array, test_array):
     """Find closest value in `known_array` for each element in `test_array`.

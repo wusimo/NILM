@@ -60,18 +60,60 @@ class CombinatorialOptimization(object):
         return data_seg, n_seg, data_seg_raw_last
 
     # TODO: decouple the following power_disaggregate
-    def power_disaggregate(self,total_power_usage,r_blur = 30):
+    def power_disaggregate(self,total_power_usage,r_blur = 30,all_change_point = True):
         # total_power_usage is simply a list
         n_equipment_type = len(self.power_list)
 
         t=np.array([i+1 for i in range(len(total_power_usage))])
         y = total_power_usage
-        t_2, y_2 = bcp.rel_change_filter_0819_3(t,y)
-        mu_list_list, sigma_list_list, prob_r_list_list, r_list_list = cp_detect.bayesian_change_point_4(y_2, r_blur=r_blur)
-        changepoint, changepoint_p = cp_detect.get_change_point(prob_r_list_list)
-        if len(changepoint)>0 and changepoint[-1]!=len(t_2)-1:
-            changepoint.append(len(t_2)-1)
-        cp_list = changepoint
+
+        if not all_change_point: # The flag to determine whether treat all time step as a changepoint
+            t_2, y_2 = bcp.rel_change_filter_0819_3(t,y)
+            mu_list_list, sigma_list_list, prob_r_list_list, r_list_list = cp_detect.bayesian_change_point_4(y_2, r_blur=r_blur)
+            changepoint, changepoint_p = cp_detect.get_change_point(prob_r_list_list)
+            if len(changepoint)>0 and changepoint[-1]!=len(t_2)-1:
+                changepoint.append(len(t_2)-1)
+            cp_list = changepoint
+        else:
+            cp_list = [ i for i in range(len(total_power_usage)) ]
+
+        data_seg, n_seg, temp = self.segment_data( total_power_usage, cp_list )
+        
+        # compute the trace list 
+        trace_list,_ = find_nearest( np.array( [ sum(s) for s in self.state_combinations ] ),np.array( [ np.mean( np.array(seg) ) for seg in data_seg ] ) )
+        # generated predicted profile
+        predicted_profile = [ [] for _ in range(n_equipment_type+1) ]
+        
+        if cp_list[-1]==len(total_power_usage)-1:
+            cp_list = cp_list[:-1]
+
+        for i_cp in range(len(trace_list)):
+            t_start = cp_list[i_cp]
+            if i_cp ==len(cp_list)-1:
+                t_end = len(total_power_usage)
+            else:
+                t_end = cp_list[i_cp+1]
+
+            for i_equipment in range(n_equipment_type):
+                temp = self.state_combinations[trace_list[i_cp]][i_equipment]
+                predicted_profile[i_equipment].extend([ temp for _ in range(t_end-t_start)])
+        
+        power_sum = np.sum(predicted_profile[:-1],axis = 0)
+        others = predicted_profile[n_equipment_type]
+        power_sum[ power_sum == 0 ] = 1
+        print len(total_power_usage),len(power_sum)
+        predicted_profile_2 = [ np.multiply( np.array(total_power_usage),np.divide(t,power_sum) ) for t in predicted_profile[:-1] ]
+
+        return predicted_profile_2
+
+    def test_power_disaggregate(self,total_power_usage,r_blur = 30):
+    # total_power_usage is simply a list
+        n_equipment_type = len(self.power_list)
+
+        t=np.array([i+1 for i in range(len(total_power_usage))])
+        y = total_power_usage
+        cp_list = [ i for i in range(len(total_power_usage)) ]
+
         data_seg, n_seg, temp = self.segment_data( total_power_usage, cp_list )
         
         # compute the trace list 

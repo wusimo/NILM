@@ -1,0 +1,18 @@
+3 oven: 0,1685
+4 oven: 0,1730,2530
+5 refrigerator: 6,195,425
+6 dishwaser: 0,181,1100
+7 kitchen_outlets: 25 (alway on)
+8 kitchen_outlets: 20, 80 (alway on)
+9 lighting: 0,81,146,340
+10 washer_dryer: 0,600,4500
+11 microwave: 0,1550
+12 bathroom_gfi: 0,1600
+13 electric_heat:0,7,11,160
+14 stove: 0,1500
+15 kitchen_outlets: 0,1100
+16 kitchen_outlets: 0,1550
+17 lighting: 0,65,72,100
+18 lighting: 1,60,70
+19 washer_dryer: 0,2,20
+20 washer_dryer: 0,3050
